@@ -59,6 +59,15 @@ router.post('/analyze-word', async (req, res, next) => {
 
       if (insertError) {
         console.error('Failed to auto-save word:', insertError);
+        // Check if it's a duplicate word error
+        if (insertError.code === '23505' && insertError.message.includes('idx_words_user_word_unique')) {
+          // Return the analysis without saving, but indicate it's a duplicate
+          return res.json({
+            analysis,
+            error: 'duplicate_word',
+            message: `"${word}" is already in your vocabulary`
+          });
+        }
       } else {
         savedWord = insertedWord;
 

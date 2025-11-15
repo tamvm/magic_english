@@ -192,6 +192,13 @@ router.post('/', async (req, res, next) => {
       .single();
 
     if (insertError) {
+      // Check if it's a duplicate word error
+      if (insertError.code === '23505' && insertError.message.includes('idx_words_user_word_unique')) {
+        return res.status(409).json({
+          error: 'duplicate_word',
+          message: `"${wordData.word}" is already in your vocabulary`
+        });
+      }
       return next(insertError);
     }
 

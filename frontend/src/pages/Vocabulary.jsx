@@ -49,11 +49,16 @@ const Vocabulary = () => {
       setAnalyzing(true)
       const response = await aiAPI.analyzeWord(newWord.trim(), { autoSave: true })
 
-      if (response.data.savedWord) {
+      if (response.data.error === 'duplicate_word') {
+        toast.error(response.data.message)
+      } else if (response.data.savedWord) {
         setWords(prev => [response.data.savedWord, ...prev])
         setNewWord('')
         setShowAddForm(false)
         toast.success('Word analyzed and saved successfully!')
+      } else if (response.data.analysis) {
+        // Word was analyzed but not saved (could be due to autoSave: false or other reasons)
+        toast.success('Word analyzed successfully!')
       }
     } catch (error) {
       toast.error('Failed to analyze word')
