@@ -77,7 +77,9 @@ class AIService {
   "ipaPronunciation": "IPA pronunciation",
   "exampleSentence": "Example sentence using the word",
   "notes": "Additional notes about usage, etymology, or context",
-  "tags": ["tag1", "tag2"]
+  "tags": ["tag1", "tag2"],
+  "vietnameseTranslation": "Vietnamese translation of the word",
+  "synonyms": "Comma-separated list of synonym words or phrases"
 }
 
 Ensure the response is valid JSON only, without any additional text or explanations.`;
@@ -118,7 +120,9 @@ Ensure the response is valid JSON only, without any additional text or explanati
         ipaPronunciation: "",
         exampleSentence: `Example sentence with "${word}".`,
         notes: "AI analysis temporarily unavailable. Please check your AI service configuration.",
-        tags: ["fallback"]
+        tags: ["fallback"],
+        vietnameseTranslation: "",
+        synonyms: ""
       };
     }
   }

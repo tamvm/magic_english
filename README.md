@@ -1,230 +1,301 @@
-# 🎓 Magic English
+# Magic English Web App
 
-<div align="center">
-
-**AI-Powered Vocabulary Learning Desktop Application**
-
-[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE.txt)
-[![Electron](https://img.shields.io/badge/Electron-31+-9FEAF9?logo=electron)](https://www.electronjs.org/)
-[![Node](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js)](https://nodejs.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](https://github.com/yourusername/desktop_vocab/releases)
-
-*Learn vocabulary smarter with AI-powered insights and gamified progress tracking*
-
-[Download](https://github.com/yourusername/desktop_vocab/releases) • [Features](#-features) • [Installation](#-installation) • [Contributing](#-contributing)
-
-</div>
-
----
+A modern web application version of Magic English - an AI-powered vocabulary learning platform built with Node.js, React, and Supabase.
 
 ## ✨ Features
 
-### 🤖 **AI-Powered Learning**
-- **Smart Word Analysis**: Get instant definitions, translations, examples, and usage tips
-- **Sentence Scoring**: AI evaluates your sentences and provides detailed feedback
-- **Magic Search**: Quick lookup from anywhere with a floating search window
+- **AI-Powered Word Analysis**: Automatically analyze words with detailed definitions, IPA pronunciation, CEFR levels, and examples
+- **Sentence Scoring**: Get detailed grammar, vocabulary, and style analysis for your English sentences
+- **Vocabulary Management**: Organize and search your vocabulary with advanced filtering
+- **Progress Tracking**: Monitor your learning progress with streaks, goals, and achievements
+- **Modern UI**: Clean, responsive interface with dark mode support
+- **Real-time Sync**: Cloud-based storage with Supabase for access across devices
 
-### 📚 **Vocabulary Management**
-- **Multiple Databases**: Organize words by topics, courses, or projects
-- **Rich Word Details**: Store definitions, Vietnamese translations, examples, and notes
-- **Flexible Database Paths**: Choose where to store your vocabulary databases
+## 🏗️ Architecture
 
-### 📊 **Progress Tracking**
-- **Learning Streaks**: Track daily learning habits with streak counters
-- **Activity Calendar**: Visualize your learning activity over time
-- **Statistics Dashboard**: Monitor words learned, sentences scored, and more
-- **Achievement System**: Unlock badges as you reach milestones
+### Backend (Node.js + Express)
+- RESTful API with Express.js
+- Supabase integration for database and authentication
+- AI service integration (Ollama Cloud, OpenAI, or local Ollama)
+- Comprehensive error handling and validation
 
-### 🎨 **Beautiful UI/UX**
-- **Modern Design**: Clean, professional interface with smooth animations
-- **Dark/Light Themes**: Choose your preferred color scheme
-- **Responsive Layout**: Optimized for various screen sizes
-- **Keyboard Shortcuts**: Power-user features for faster workflows
+### Frontend (React + Vite)
+- Modern React application with hooks and context
+- Tailwind CSS for styling
+- React Router for navigation
+- Axios for API communication
+- Real-time updates and optimistic UI
 
-### 🌍 **Multi-language Support**
-- English interface with Vietnamese translations
-- Extensible i18n system for additional languages
-
----
-
-## 📥 Installation
-
-### Option 1: Download Release (Recommended)
-
-1. Go to [Releases](https://github.com/yourusername/desktop_vocab/releases)
-2. Download `Magic English-1.0.0-win-x64.exe`
-3. Run the installer and follow the wizard
-4. Launch **Magic English** from Start Menu or Desktop
-
-### Option 2: Portable Version
-
-1. Download `Magic English-portable.exe`
-2. Place it in your preferred folder
-3. Run directly - no installation needed!
-
-### Option 3: Build from Source
-
-```bash
-# Clone repository
-git clone https://github.com/yourusername/desktop_vocab.git
-cd desktop_vocab
-
-# Install dependencies
-npm install
-
-# Run in development mode
-npm start
-
-# Build for production
-npm run build:win
-```
-
----
+### Database (Supabase)
+- PostgreSQL with Row Level Security
+- Real-time subscriptions
+- User authentication and profile management
+- Structured vocabulary and progress data
 
 ## 🚀 Quick Start
 
-1. **Launch the app** - Choose or create your first vocabulary database
-2. **Add your first word** - Type a word and click "Search & Add"
-3. **AI analyzes it** - Get instant definitions, examples, and translations
-4. **Build your streak** - Come back daily to maintain your learning habit
-5. **Track progress** - Check Stats & Streaks tab to see your growth
-
----
-
-## 🛠️ Technology Stack
-
-| Category | Technologies |
-|----------|-------------|
-| **Framework** | Electron 31+, Node.js 20+ |
-| **AI/ML** | Ollama Cloud API (Claude Sonnet 4.5) |
-| **Storage** | JSON-based databases with file system operations |
-| **UI** | Vanilla JavaScript, CSS3 with custom properties |
-| **Build** | electron-builder, NSIS for Windows installer |
-| **Development** | electronmon for hot-reload, Prettier for formatting |
-
----
-
-## 📁 Project Structure
-
-```
-desktop_vocab/
-├── electron/               # Main process
-│   ├── main.js            # App entry point
-│   ├── preload.cjs        # IPC bridge
-│   ├── ipcHandlers.js     # IPC handlers
-│   └── services/          # Business logic
-│       ├── jsonStore.js   # Database management
-│       ├── userProfileStore.js  # User data & achievements
-│       ├── dbPathsStore.js      # Path management
-│       └── claudeService.js     # AI client
-├── src/
-│   ├── renderer/          # Renderer process (main UI)
-│   │   ├── index.html
-│   │   ├── app.js
-│   │   └── styles.css
-│   └── magic-search/      # Floating search window
-│       ├── magic-search.html
-│       ├── magic-search.js
-│       └── magic-search-claude.css
-├── static/                # Assets (icons, images)
-├── scripts/               # Build automation
-├── .github/workflows/     # CI/CD automation
-└── package.json
-```
-
----
-
-## 🔧 Development
-
 ### Prerequisites
-- Node.js 20+ and npm
-- Windows 10/11 (for building Windows installer)
-- ImageMagick (for icon generation): `choco install imagemagick`
 
-### Setup
+- Node.js 18+ and npm
+- Supabase account
+- AI provider API key (Ollama Cloud recommended)
+
+### 1. Clone and Install
 
 ```bash
-# Install dependencies
-npm install
+# Clone the repository
+git clone <your-repo-url>
+cd magic_english
 
-# Run in development mode with hot-reload
+# Install dependencies for all packages
+npm run install:deps
+```
+
+### 2. Set up Supabase
+
+1. Create a new project at [supabase.com](https://supabase.com)
+2. Go to Settings > API and copy your project URL and anon key
+3. In the SQL editor, run the scripts in this order:
+   - `backend/sql/migrations.sql`
+   - `backend/sql/functions.sql`
+
+### 3. Configure Environment Variables
+
+#### Backend (.env)
+```bash
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env`:
+```env
+NODE_ENV=development
+PORT=5000
+FRONTEND_URL=http://localhost:3000
+
+# Supabase
+SUPABASE_URL=your-supabase-project-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# AI Provider (choose one)
+AI_PROVIDER=ollama-cloud
+AI_API_KEY=your-ollama-cloud-api-key
+AI_MODEL=gpt-oss:20b-cloud
+```
+
+#### Frontend (.env)
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+Edit `frontend/.env`:
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_SUPABASE_URL=your-supabase-project-url
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+### 4. Start Development
+
+```bash
+# Start both backend and frontend
 npm run dev
-
-# Run in production mode
-npm start
-
-# Format code
-npm run format
-
-# Lint code
-npm run lint
 ```
 
-### Building
+This will start:
+- Backend API server at http://localhost:5000
+- Frontend development server at http://localhost:3000
+
+## 📖 Detailed Setup
+
+### Supabase Setup
+
+1. **Create a Supabase Project**
+   - Go to [supabase.com](https://supabase.com)
+   - Click "New project"
+   - Choose organization and set project details
+
+2. **Get API Keys**
+   - Go to Settings > API
+   - Copy "Project URL" and "anon/public" key
+
+3. **Set up Database Schema**
+   - Go to the SQL Editor
+   - Copy and run `backend/sql/migrations.sql`
+   - Then run `backend/sql/functions.sql`
+
+4. **Configure Authentication**
+   - Go to Authentication > Settings
+   - Enable email authentication
+   - Configure email templates if needed
+
+### AI Provider Setup
+
+#### Option 1: Ollama Cloud (Recommended)
+1. Sign up at [ollama.com](https://ollama.com)
+2. Get your API key from the dashboard
+3. Use model `gpt-oss:20b-cloud` for best results
+
+#### Option 2: OpenAI
+1. Get API key from [platform.openai.com](https://platform.openai.com)
+2. Set `AI_PROVIDER=openai` and `AI_MODEL=gpt-4o-mini`
+
+#### Option 3: Local Ollama
+1. Install Ollama locally
+2. Run `ollama serve`
+3. Set `AI_PROVIDER=ollama-local` and `AI_MODEL=llama3.2:latest`
+
+### Production Deployment
+
+#### Backend (Node.js)
+Deploy to platforms like:
+- **Heroku**: `git push heroku main`
+- **Railway**: Connect GitHub repository
+- **DigitalOcean App Platform**: Use app spec
+- **AWS/GCP/Azure**: Use container deployment
+
+#### Frontend (Static Site)
+Deploy to platforms like:
+- **Vercel**: `vercel --prod`
+- **Netlify**: `netlify deploy --prod`
+- **GitHub Pages**: Use GitHub Actions
+- **Cloudflare Pages**: Connect GitHub repository
+
+#### Environment Variables for Production
+Update these for production:
+```env
+# Backend
+NODE_ENV=production
+FRONTEND_URL=https://your-frontend-domain.com
+
+# Frontend
+VITE_API_URL=https://your-backend-domain.com/api
+```
+
+## 🛠️ Development
+
+### Project Structure
+
+```
+magic_english/
+├── backend/                 # Node.js API server
+│   ├── src/
+│   │   ├── routes/         # API routes
+│   │   ├── services/       # Business logic
+│   │   ├── middleware/     # Express middleware
+│   │   └── config/         # Configuration
+│   └── sql/               # Database migrations
+├── frontend/              # React application
+│   ├── src/
+│   │   ├── components/    # Reusable components
+│   │   ├── pages/         # Page components
+│   │   ├── contexts/      # React contexts
+│   │   └── lib/           # Utilities and API
+└── package.json          # Workspace configuration
+```
+
+### Available Scripts
 
 ```bash
-# Build installer (x64)
-npm run build:win
+# Development
+npm run dev              # Start both backend and frontend
+npm run dev:server       # Start only backend
+npm run dev:client       # Start only frontend
 
-# Build 32-bit installer
-npm run build:win32
+# Building
+npm run build           # Build both applications
+npm run build:server    # Build backend (no-op for Node.js)
+npm run build:client    # Build frontend for production
 
-# Build portable version
-npm run build:portable
-
-# Build unpacked directory only
-npm run build:dir
+# Production
+npm start              # Start production server (backend only)
 ```
 
-Output will be in `build-output/` folder.
+### API Documentation
 
----
+#### Authentication Endpoints
+- `POST /api/users/signup` - Create new account
+- `POST /api/users/signin` - Sign in
+- `POST /api/users/signout` - Sign out
+- `GET /api/users/me` - Get current user profile
 
-## 🤝 Contributing
+#### Words Endpoints
+- `GET /api/words` - Get user's vocabulary
+- `POST /api/words` - Create new word
+- `PUT /api/words/:id` - Update word
+- `DELETE /api/words/:id` - Delete word
+- `POST /api/words/bulk` - Bulk operations
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+#### AI Endpoints
+- `POST /api/ai/analyze-word` - Analyze word with AI
+- `POST /api/ai/analyze-sentence` - Analyze sentence
+- `POST /api/ai/chat` - Chat with AI assistant
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+#### Profile Endpoints
+- `GET /api/profile` - Get user profile and stats
+- `POST /api/profile/activity` - Record learning activity
+- `PUT /api/profile/goals` - Update learning goals
 
----
+## 🔧 Configuration
 
-## 📝 Changelog
+### Database Schema
+The application uses these main tables:
+- `users` - User profiles
+- `words` - Vocabulary entries
+- `profiles` - Learning statistics and achievements
+- `collections` - Word organization (future feature)
 
-See [RELEASE.md](RELEASE.md) for detailed version history.
+### AI Integration
+Supports multiple AI providers:
+- **Ollama Cloud** - Cloud-hosted models (recommended)
+- **OpenAI** - GPT models
+- **Local Ollama** - Self-hosted models
 
----
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Database Connection Errors**
+   - Verify Supabase URL and API keys
+   - Ensure database schema is properly set up
+   - Check network connectivity
+
+2. **AI API Errors**
+   - Verify AI provider API key
+   - Check API rate limits
+   - Ensure model name is correct
+
+3. **Build Errors**
+   - Clear node_modules and reinstall dependencies
+   - Check Node.js version compatibility
+   - Verify environment variables
+
+4. **CORS Issues**
+   - Ensure backend CORS is configured correctly
+   - Check frontend and backend URLs match
+
+### Getting Help
+
+- Check the [Issues](https://github.com/your-repo/issues) page
+- Review error logs in browser console and server logs
+- Verify all environment variables are set correctly
 
 ## 📄 License
 
-This project is licensed under the **BSD 3-Clause License** - see [LICENSE.txt](LICENSE.txt) for details.
+This project is licensed under the MIT License - see the original LICENSE.txt file for details.
 
----
+## 🤝 Contributing
 
-## 🙏 Acknowledgments
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m 'Add amazing feature'`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
-- **Ollama Cloud** for providing the AI API
-- **Electron** team for the amazing framework
-- **Claude Sonnet 4.5** for powering the AI features
-- All contributors and users of Magic English
+## 🔮 Roadmap
 
----
-
-## 📧 Support
-
-- 🐛 [Report a bug](https://github.com/yourusername/desktop_vocab/issues/new?labels=bug)
-- 💡 [Request a feature](https://github.com/yourusername/desktop_vocab/issues/new?labels=enhancement)
-- 💬 [Discuss](https://github.com/yourusername/desktop_vocab/discussions)
-
----
-
-<div align="center">
-
-**Made with ❤️ by Alphatitan**
-
-⭐ Star this repo if you find it helpful!
-
-</div>
+- [ ] Enhanced profile and statistics dashboard
+- [ ] Advanced vocabulary collections and tags
+- [ ] Spaced repetition learning system
+- [ ] Mobile app (React Native)
+- [ ] Collaborative learning features
+- [ ] Advanced AI features and integrations

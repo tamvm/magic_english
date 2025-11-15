@@ -37,6 +37,14 @@ const Vocabulary = () => {
       return
     }
 
+    // Check for duplicate word
+    const wordToCheck = newWord.trim().toLowerCase()
+    const existingWord = words.find(word => word.word.toLowerCase() === wordToCheck)
+    if (existingWord) {
+      toast.error(`"${newWord.trim()}" is already in your vocabulary`)
+      return
+    }
+
     try {
       setAnalyzing(true)
       const response = await aiAPI.analyzeWord(newWord.trim(), { autoSave: true })
@@ -111,7 +119,9 @@ const Vocabulary = () => {
     return words.filter(word =>
       word.word.toLowerCase().includes(query) ||
       word.definition.toLowerCase().includes(query) ||
-      word.example_sentence?.toLowerCase().includes(query)
+      word.example_sentence?.toLowerCase().includes(query) ||
+      word.vietnamese_translation?.toLowerCase().includes(query) ||
+      word.synonyms?.toLowerCase().includes(query)
     )
   }, [words, searchQuery])
 
@@ -238,8 +248,9 @@ const Vocabulary = () => {
                       <th className="table-header-cell">Type</th>
                       <th className="table-header-cell">CEFR</th>
                       <th className="table-header-cell">Definition</th>
+                      <th className="table-header-cell">Vietnamese</th>
+                      <th className="table-header-cell">Synonyms</th>
                       <th className="table-header-cell">Example</th>
-                      <th className="table-header-cell">Added</th>
                       <th className="table-header-cell">Actions</th>
                     </tr>
                   </thead>
@@ -273,19 +284,24 @@ const Vocabulary = () => {
                           )}
                         </td>
                         <td className="table-cell max-w-xs">
-                          <p className="text-sm text-gray-900 dark:text-white truncate">
+                          <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap break-words">
                             {word.definition}
                           </p>
                         </td>
                         <td className="table-cell max-w-xs">
-                          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                            {word.example_sentence}
+                          <p className="text-sm text-gray-900 dark:text-white truncate">
+                            {word.vietnamese_translation || '-'}
                           </p>
                         </td>
-                        <td className="table-cell">
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {formatDate(word.created_at)}
-                          </span>
+                        <td className="table-cell max-w-xs">
+                          <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                            {word.synonyms || '-'}
+                          </p>
+                        </td>
+                        <td className="table-cell max-w-xs">
+                          <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap break-words">
+                            {word.example_sentence}
+                          </p>
                         </td>
                         <td className="table-cell">
                           <div className="flex space-x-2">

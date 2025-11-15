@@ -14,6 +14,8 @@ const createWordSchema = Joi.object({
   notes: Joi.string().max(1000).default(''),
   tags: Joi.array().items(Joi.string().max(50)).default([]),
   collectionId: Joi.string().uuid().optional(),
+  vietnameseTranslation: Joi.string().max(500).default(''),
+  synonyms: Joi.string().max(1000).default(''),
 });
 
 const updateWordSchema = Joi.object({
@@ -25,6 +27,8 @@ const updateWordSchema = Joi.object({
   exampleSentence: Joi.string().max(500),
   notes: Joi.string().max(1000),
   tags: Joi.array().items(Joi.string().max(50)),
+  vietnameseTranslation: Joi.string().max(500),
+  synonyms: Joi.string().max(1000),
 });
 
 const searchSchema = Joi.object({
@@ -51,9 +55,9 @@ router.get('/', async (req, res, next) => {
       .from('words')
       .select(`
         *,
-        word_collections!inner(
+        word_collections(
           collection_id,
-          collections!inner(name)
+          collections(name)
         )
       `)
       .eq('user_id', req.user.id);
@@ -61,13 +65,19 @@ router.get('/', async (req, res, next) => {
     // Add search filter
     if (q) {
       query = query.or(
-        `word.ilike.%${q}%,definition.ilike.%${q}%,example_sentence.ilike.%${q}%`
+        `word.ilike.%${q}%,definition.ilike.%${q}%,example_sentence.ilike.%${q}%,vietnamese_translation.ilike.%${q}%,synonyms.ilike.%${q}%`
       );
     }
 
     // Add collection filter
     if (collection) {
-      query = query.eq('word_collections.collection_id', collection);
+      const { data: wordsInCollection } = await req.supabase
+        .from('word_collections')
+        .select('word_id')
+        .eq('collection_id', collection);
+
+      const wordIds = wordsInCollection?.map(wc => wc.word_id) || [];
+      query = query.in('id', wordIds);
     }
 
     // Add sorting
@@ -90,13 +100,19 @@ router.get('/', async (req, res, next) => {
 
     if (q) {
       countQuery = countQuery.or(
-        `word.ilike.%${q}%,definition.ilike.%${q}%,example_sentence.ilike.%${q}%`
+        `word.ilike.%${q}%,definition.ilike.%${q}%,example_sentence.ilike.%${q}%,vietnamese_translation.ilike.%${q}%,synonyms.ilike.%${q}%`
       );
     }
 
     if (collection) {
-      countQuery = countQuery
-        .eq('word_collections.collection_id', collection);
+      // For collection filtering in count query, we need to use a subquery
+      const { data: wordsInCollection } = await req.supabase
+        .from('word_collections')
+        .select('word_id')
+        .eq('collection_id', collection);
+
+      const wordIds = wordsInCollection?.map(wc => wc.word_id) || [];
+      countQuery = countQuery.in('id', wordIds);
     }
 
     const { count, error: countError } = await countQuery;
@@ -169,6 +185,8 @@ router.post('/', async (req, res, next) => {
         word_type: wordData.wordType,
         ipa_pronunciation: wordData.ipaPronunciation,
         example_sentence: wordData.exampleSentence,
+        vietnamese_translation: wordData.vietnameseTranslation,
+        synonyms: wordData.synonyms,
       })
       .select()
       .single();
@@ -246,6 +264,8 @@ router.put('/:id', async (req, res, next) => {
         word_type: value.wordType,
         ipa_pronunciation: value.ipaPronunciation,
         example_sentence: value.exampleSentence,
+        vietnamese_translation: value.vietnameseTranslation,
+        synonyms: value.synonyms,
         updated_at: new Date().toISOString(),
       })
       .eq('id', req.params.id)
@@ -329,6 +349,8 @@ router.post('/bulk', async (req, res, next) => {
           word_type: word.wordType,
           ipa_pronunciation: word.ipaPronunciation,
           example_sentence: word.exampleSentence,
+          vietnamese_translation: word.vietnameseTranslation,
+          synonyms: word.synonyms,
         }));
 
         const { data: insertedWords, error: insertError } = await req.supabase

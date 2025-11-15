@@ -46,6 +46,8 @@ router.post('/analyze-word', async (req, res, next) => {
         example_sentence: analysis.exampleSentence || '',
         notes: analysis.notes || '',
         tags: analysis.tags || [],
+        vietnamese_translation: analysis.vietnameseTranslation || '',
+        synonyms: analysis.synonyms || '',
         user_id: req.user.id,
       };
 
