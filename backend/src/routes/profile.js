@@ -9,6 +9,10 @@ const updateGoalsSchema = Joi.object({
   weeklyGoal: Joi.number().integer().min(1).max(1000),
 });
 
+const updateCefrLevelSchema = Joi.object({
+  cefrLevel: Joi.string().valid('A1', 'A2', 'B1', 'B2', 'C1', 'C2').required(),
+});
+
 // Get user profile and stats
 router.get('/', async (req, res, next) => {
   try {
@@ -31,6 +35,7 @@ router.get('/', async (req, res, next) => {
           daily_goal: 5,
           weekly_goal: 30,
           streak_freezes_available: 2,
+          cefr_level: 'B2',
           achievements: [],
           activity_history: {},
         }, {
@@ -236,6 +241,38 @@ router.get('/activity-history', async (req, res, next) => {
 
     res.json({
       history,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update CEFR level
+router.put('/cefr-level', async (req, res, next) => {
+  try {
+    const { error, value } = updateCefrLevelSchema.validate(req.body);
+    if (error) {
+      error.isJoi = true;
+      return next(error);
+    }
+
+    const { data: profile, error: updateError } = await req.supabase
+      .from('profiles')
+      .update({
+        cefr_level: value.cefrLevel,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      return next(updateError);
+    }
+
+    res.json({
+      message: 'CEFR level updated successfully',
+      profile,
     });
   } catch (error) {
     next(error);

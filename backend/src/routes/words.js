@@ -349,16 +349,20 @@ router.post('/bulk', async (req, res, next) => {
 
     switch (operation) {
       case 'import':
-        const wordsToInsert = words.map(word => ({
-          ...word,
-          user_id: req.user.id,
-          cefr_level: word.cefrLevel,
-          word_type: word.wordType,
-          ipa_pronunciation: word.ipaPronunciation,
-          example_sentence: word.exampleSentence,
-          vietnamese_translation: word.vietnameseTranslation,
-          synonyms: word.synonyms,
-        }));
+        const wordsToInsert = words.map(word => {
+          // Destructure to exclude camelCase fields that need to be converted to snake_case
+          const { cefrLevel, wordType, ipaPronunciation, exampleSentence, vietnameseTranslation, ...restWord } = word;
+
+          return {
+            ...restWord,
+            user_id: req.user.id,
+            cefr_level: cefrLevel,
+            word_type: wordType,
+            ipa_pronunciation: ipaPronunciation,
+            example_sentence: exampleSentence,
+            vietnamese_translation: vietnameseTranslation,
+          };
+        });
 
         const { data: insertedWords, error: insertError } = await req.supabase
           .from('words')

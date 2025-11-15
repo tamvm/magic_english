@@ -1,6 +1,7 @@
 import express from 'express';
 import Joi from 'joi';
 import { aiService } from '../services/aiService.js';
+import { webScrapingService } from '../services/webScrapingService.js';
 
 const router = express.Router();
 
@@ -19,6 +20,12 @@ const chatSchema = Joi.object({
   message: Joi.string().min(1).max(2000).required(),
   conversationId: Joi.string().uuid().optional(),
 });
+
+const analyzeContentSchema = Joi.object({
+  url: Joi.string().uri().optional(),
+  text: Joi.string().min(1).max(20000).optional(),
+  limit: Joi.number().integer().min(1).max(20).default(20),
+}).or('url', 'text');
 
 // Analyze word with AI
 router.post('/analyze-word', async (req, res, next) => {
@@ -120,6 +127,119 @@ router.post('/analyze-sentence', async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+});
+
+// Analyze website or text content for vocabulary
+router.post('/analyze-content', async (req, res, next) => {
+  try {
+    const { error, value } = analyzeContentSchema.validate(req.body);
+    if (error) {
+      error.isJoi = true;
+      return next(error);
+    }
+
+    const { url, text, limit } = value;
+
+    // Get user's CEFR level from profile
+    let userCefrLevel = 'B2'; // Default
+    try {
+      const { data: profile } = await req.supabase
+        .from('profiles')
+        .select('cefr_level')
+        .eq('id', req.user.id)
+        .single();
+
+      if (profile?.cefr_level) {
+        userCefrLevel = profile.cefr_level;
+      }
+    } catch (profileError) {
+      console.log('Could not fetch user profile, using default CEFR level');
+    }
+
+    let content;
+    let sourceType;
+    let sourceInfo = {};
+
+    if (url) {
+      // Scrape website content
+      const scrapingResult = await webScrapingService.scrapeUrl(url);
+
+      if (!scrapingResult.success) {
+        return res.status(400).json({
+          error: 'website_scraping_failed',
+          message: `Failed to extract content from website: ${scrapingResult.error}`
+        });
+      }
+
+      content = scrapingResult.content;
+      sourceType = 'website';
+      sourceInfo = {
+        url: scrapingResult.url,
+        title: scrapingResult.title,
+        excerpt: scrapingResult.excerpt
+      };
+    } else {
+      // Process text content
+      const textResult = await webScrapingService.processTextContent(text);
+      content = textResult.content;
+      sourceType = 'text';
+      sourceInfo = {
+        title: textResult.title,
+        excerpt: textResult.excerpt
+      };
+    }
+
+    if (!content || content.length < 100) {
+      return res.status(400).json({
+        error: 'insufficient_content',
+        message: 'The content is too short to analyze. Please provide more substantial content.'
+      });
+    }
+
+    // Analyze content with AI
+    const vocabulary = await aiService.analyzeWebsiteContent(content, userCefrLevel, { limit });
+
+    if (!vocabulary || vocabulary.length === 0) {
+      return res.json({
+        vocabulary: [],
+        sourceType,
+        sourceInfo,
+        userCefrLevel,
+        message: 'No new vocabulary found in the content that matches your current level.'
+      });
+    }
+
+    res.json({
+      vocabulary,
+      sourceType,
+      sourceInfo,
+      userCefrLevel,
+      totalFound: vocabulary.length,
+      message: `Found ${vocabulary.length} vocabulary items for your level (${userCefrLevel})`
+    });
+
+  } catch (error) {
+    console.error('Content analysis error:', error);
+    console.error('Error stack:', error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = 'Content analysis failed';
+    if (error.message.includes('website_scraping_failed')) {
+      errorMessage = 'Failed to extract content from website. The site may be blocking automated access.';
+    } else if (error.message.includes('insufficient_content')) {
+      errorMessage = 'The content is too short to analyze effectively.';
+    } else if (error.message.includes('AI service unavailable')) {
+      errorMessage = 'AI service is currently unavailable. Please check your API configuration.';
+    } else if (error.message.includes('Invalid AI response format')) {
+      errorMessage = 'AI service returned an unexpected response format.';
+    }
+
+    res.status(400).json({
+      error: 'content_analysis_failed',
+      message: errorMessage,
+      details: error.message
+    });
   }
 });
 

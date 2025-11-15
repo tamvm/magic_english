@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Search, Plus, Download, Upload, Sparkles, Edit2, Trash2, BookOpen } from 'lucide-react'
+import { Search, Plus, Download, Upload, Sparkles, Edit2, Trash2, BookOpen, Link, FileText, Globe, Type } from 'lucide-react'
 import { wordsAPI, aiAPI } from '@/lib/api'
 import { debounce, getCefrColor, getWordTypeColor, formatDate } from '@/lib/utils'
 import LoadingSpinner from '@/components/UI/LoadingSpinner'
@@ -13,6 +13,15 @@ const Vocabulary = () => {
   const [newWord, setNewWord] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showContentForm, setShowContentForm] = useState(false)
+  const [contentAnalysisMode, setContentAnalysisMode] = useState('url') // 'url' or 'text'
+  const [contentUrl, setContentUrl] = useState('')
+  const [contentText, setContentText] = useState('')
+  const [analyzingContent, setAnalyzingContent] = useState(false)
+  const [analysisProgress, setAnalysisProgress] = useState({ step: 0, message: '', percentage: 0 })
+  const [vocabularyResults, setVocabularyResults] = useState([])
+  const [selectedWords, setSelectedWords] = useState(new Set())
+  const [savingSelected, setSavingSelected] = useState(false)
 
   useEffect(() => {
     loadWords()
@@ -65,6 +74,213 @@ const Vocabulary = () => {
       console.error('Analyze word error:', error)
     } finally {
       setAnalyzing(false)
+    }
+  }
+
+  const analyzeContent = async () => {
+    if (contentAnalysisMode === 'url' && !contentUrl.trim()) {
+      toast.error('Please enter a URL to analyze')
+      return
+    }
+    if (contentAnalysisMode === 'text' && !contentText.trim()) {
+      toast.error('Please enter text content to analyze')
+      return
+    }
+
+    try {
+      setAnalyzingContent(true)
+      setVocabularyResults([])
+      setSelectedWords(new Set())
+
+      const totalSteps = contentAnalysisMode === 'url' ? 8 : 6;
+
+      // Step 1: Initialize
+      setAnalysisProgress({
+        step: 1,
+        message: `Preparing to analyze ${contentAnalysisMode === 'url' ? 'website' : 'text'} content...`,
+        percentage: Math.round((1/totalSteps) * 100)
+      })
+      await new Promise(resolve => setTimeout(resolve, 800))
+
+      const analysisData = {}
+      if (contentAnalysisMode === 'url') {
+        // Step 2: Starting browser
+        setAnalysisProgress({
+          step: 2,
+          message: 'Starting browser and navigation...',
+          percentage: Math.round((2/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 1000))
+
+        // Step 3: Fetching website
+        setAnalysisProgress({
+          step: 3,
+          message: `Loading website: ${new URL(contentUrl.trim()).hostname}`,
+          percentage: Math.round((3/totalSteps) * 100)
+        })
+        analysisData.url = contentUrl.trim()
+
+        await new Promise(resolve => setTimeout(resolve, 1500))
+
+        // Step 4: Extracting content
+        setAnalysisProgress({
+          step: 4,
+          message: 'Extracting main article content...',
+          percentage: Math.round((4/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 1000))
+
+        // Step 5: Processing content
+        setAnalysisProgress({
+          step: 5,
+          message: 'Processing extracted text...',
+          percentage: Math.round((5/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 800))
+      } else {
+        // Step 2: Processing text content
+        setAnalysisProgress({
+          step: 2,
+          message: 'Validating text content...',
+          percentage: Math.round((2/totalSteps) * 100)
+        })
+        analysisData.text = contentText.trim()
+        await new Promise(resolve => setTimeout(resolve, 800))
+
+        // Step 3: Preparing content
+        setAnalysisProgress({
+          step: 3,
+          message: 'Preparing content for analysis...',
+          percentage: Math.round((3/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 600))
+      }
+
+      // AI Analysis Step
+      const aiStepNumber = contentAnalysisMode === 'url' ? 6 : 4;
+      setAnalysisProgress({
+        step: aiStepNumber,
+        message: 'AI analyzing vocabulary for your level...',
+        percentage: Math.round((aiStepNumber/totalSteps) * 100)
+      })
+
+      const response = await aiAPI.analyzeContent(analysisData)
+
+      // Step: Processing AI results
+      const resultStepNumber = contentAnalysisMode === 'url' ? 7 : 5;
+      setAnalysisProgress({
+        step: resultStepNumber,
+        message: 'Processing AI analysis results...',
+        percentage: Math.round((resultStepNumber/totalSteps) * 100)
+      })
+      await new Promise(resolve => setTimeout(resolve, 700))
+
+      // Final step
+      setAnalysisProgress({
+        step: totalSteps,
+        message: 'Analysis complete! 🎉',
+        percentage: 100
+      })
+
+      if (response.data.vocabulary && response.data.vocabulary.length > 0) {
+        setVocabularyResults(response.data.vocabulary)
+        toast.success(response.data.message || `Found ${response.data.vocabulary.length} vocabulary items`)
+      } else {
+        setVocabularyResults([])
+        toast.info(response.data.message || 'No new vocabulary found')
+      }
+    } catch (error) {
+      setAnalysisProgress({ step: 0, message: 'Analysis failed', percentage: 0 })
+
+      // Provide user-friendly error messages
+      let errorMessage = 'Failed to analyze content'
+      if (error.message.includes('timeout')) {
+        errorMessage = 'Analysis timed out. The website might be taking too long to load. Please try again or use "From Text" mode instead.'
+      } else if (error.message.includes('Network Error')) {
+        errorMessage = 'Network connection issue. Please check your internet connection and try again.'
+      } else if (error.message.includes('blocked')) {
+        errorMessage = 'The website is blocking automated access. Try copying the text and using "From Text" mode instead.'
+      } else if (error.message.includes('AI service unavailable')) {
+        errorMessage = 'AI service is temporarily unavailable. Please try again in a few moments.'
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Server error occurred. Please try again or contact support if the issue persists.'
+      }
+
+      toast.error(errorMessage)
+      console.error('Content analysis error:', error)
+    } finally {
+      setAnalyzingContent(false)
+      // Reset progress after a short delay
+      setTimeout(() => {
+        setAnalysisProgress({ step: 0, message: '', percentage: 0 })
+      }, 2000)
+    }
+  }
+
+  const toggleWordSelection = (index) => {
+    const newSelectedWords = new Set(selectedWords)
+    if (newSelectedWords.has(index)) {
+      newSelectedWords.delete(index)
+    } else {
+      newSelectedWords.add(index)
+    }
+    setSelectedWords(newSelectedWords)
+  }
+
+  const selectAllWords = () => {
+    if (selectedWords.size === vocabularyResults.length) {
+      setSelectedWords(new Set())
+    } else {
+      setSelectedWords(new Set(vocabularyResults.map((_, index) => index)))
+    }
+  }
+
+  const saveSelectedWords = async () => {
+    if (selectedWords.size === 0) {
+      toast.error('Please select at least one word to save')
+      return
+    }
+
+    const wordsToSave = Array.from(selectedWords).map(index => {
+      const item = vocabularyResults[index]
+      return {
+        word: item.word,
+        definition: item.definition,
+        wordType: item.wordType,
+        cefrLevel: item.cefrLevel,
+        ipaPronunciation: item.ipaPronunciation,
+        exampleSentence: item.exampleSentence,
+        notes: item.notes,
+        tags: item.tags || [],
+        vietnameseTranslation: item.vietnameseTranslation,
+        synonyms: item.synonyms
+      }
+    })
+
+    try {
+      setSavingSelected(true)
+
+      const response = await wordsAPI.bulkOperation({
+        operation: 'import',
+        words: wordsToSave
+      })
+
+      if (response.data.words) {
+        setWords(prev => [...response.data.words, ...prev])
+        toast.success(`${response.data.words.length} words saved successfully!`)
+
+        // Clear the content form and results
+        setShowContentForm(false)
+        setContentUrl('')
+        setContentText('')
+        setVocabularyResults([])
+        setSelectedWords(new Set())
+      }
+    } catch (error) {
+      toast.error('Failed to save selected words')
+      console.error('Save selected words error:', error)
+    } finally {
+      setSavingSelected(false)
     }
   }
 
@@ -155,13 +371,26 @@ const Vocabulary = () => {
               Manage your vocabulary collection
             </p>
           </div>
-          <div className="mt-4 sm:mt-0 flex space-x-3">
+          <div className="mt-4 sm:mt-0 flex flex-wrap gap-3">
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => {
+                setShowAddForm(!showAddForm)
+                setShowContentForm(false)
+              }}
               className="btn-primary"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Word
+            </button>
+            <button
+              onClick={() => {
+                setShowContentForm(!showContentForm)
+                setShowAddForm(false)
+              }}
+              className="btn-secondary"
+            >
+              <Globe className="h-4 w-4 mr-2" />
+              Add from Content
             </button>
             <button
               onClick={exportWords}
@@ -205,6 +434,319 @@ const Vocabulary = () => {
                   )}
                   Analyze
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content Analysis Form */}
+        {showContentForm && (
+          <div className="card">
+            <div className="card-header">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Analyze Content for Vocabulary
+              </h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Extract vocabulary from websites or text based on your English level
+              </p>
+            </div>
+            <div className="card-body space-y-4">
+              {/* Mode Selection */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => {
+                    setContentAnalysisMode('url')
+                    setContentText('')
+                  }}
+                  className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                    contentAnalysisMode === 'url'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <Link className="h-4 w-4 mr-2" />
+                  From URL
+                </button>
+                <button
+                  onClick={() => {
+                    setContentAnalysisMode('text')
+                    setContentUrl('')
+                  }}
+                  className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                    contentAnalysisMode === 'text'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <Type className="h-4 w-4 mr-2" />
+                  From Text
+                </button>
+              </div>
+
+              {/* Input Fields */}
+              <div className="space-y-4">
+                {contentAnalysisMode === 'url' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Website URL
+                    </label>
+                    <input
+                      type="url"
+                      className="form-input"
+                      placeholder="https://example.com/article"
+                      value={contentUrl}
+                      onChange={(e) => setContentUrl(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && analyzeContent()}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Enter a URL to extract and analyze vocabulary from the main content
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Text Content
+                    </label>
+                    <textarea
+                      className="form-input min-h-[120px]"
+                      placeholder="Paste your text content here..."
+                      value={contentText}
+                      onChange={(e) => setContentText(e.target.value)}
+                      rows={6}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Paste any English text to extract vocabulary suitable for your level
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Progress Bar */}
+              {analyzingContent && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700 dark:text-gray-300 font-medium">
+                      Step {analysisProgress.step}/{contentAnalysisMode === 'url' ? '8' : '6'}: {analysisProgress.message}
+                    </span>
+                    <span className="text-blue-600 dark:text-blue-400 font-bold text-lg">
+                      {analysisProgress.percentage}%
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <div className="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 h-full rounded-full transition-all duration-700 ease-out relative overflow-hidden"
+                        style={{ width: `${analysisProgress.percentage}%` }}
+                      >
+                        {/* Shimmer effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse"></div>
+                      </div>
+                    </div>
+
+                    {/* Step indicators */}
+                    <div className="flex justify-between mt-2">
+                      {Array.from({ length: contentAnalysisMode === 'url' ? 8 : 6 }, (_, i) => (
+                        <div
+                          key={i}
+                          className={`h-2 w-2 rounded-full transition-all duration-300 ${
+                            i + 1 <= analysisProgress.step
+                              ? 'bg-blue-500 scale-110'
+                              : i + 1 === analysisProgress.step + 1
+                              ? 'bg-blue-300 animate-pulse'
+                              : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center space-x-3 text-sm">
+                    <div className="flex space-x-1">
+                      <div className="h-2 w-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-bounce"></div>
+                      <div className="h-2 w-2 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                      <div className="h-2 w-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                    </div>
+                    <span className="text-gray-600 dark:text-gray-300 font-medium">
+                      Analyzing content with AI...
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={analyzeContent}
+                  disabled={
+                    analyzingContent ||
+                    (contentAnalysisMode === 'url' && !contentUrl.trim()) ||
+                    (contentAnalysisMode === 'text' && !contentText.trim())
+                  }
+                  className="btn-primary"
+                >
+                  {!analyzingContent && (
+                    <Sparkles className="h-4 w-4 mr-2" />
+                  )}
+                  {analyzingContent ? 'Analyzing...' : 'Analyze Content'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vocabulary Results */}
+        {vocabularyResults.length > 0 && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+              <div className="card-header bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-white bg-opacity-20 p-2 rounded-full">
+                      <Sparkles className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold">
+                        🎉 Found {vocabularyResults.length} New Vocabulary Items!
+                      </h3>
+                      <p className="text-blue-100 text-sm">
+                        Select the words you want to add to your vocabulary collection
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setVocabularyResults([])
+                      setSelectedWords(new Set())
+                    }}
+                    className="text-white hover:text-gray-200 p-2"
+                  >
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-blue-100 dark:bg-blue-800 px-4 py-2 rounded-full">
+                      <span className="text-blue-800 dark:text-blue-200 font-medium">
+                        {selectedWords.size} selected
+                      </span>
+                    </div>
+                    <div className="text-gray-600 dark:text-gray-400 text-sm">
+                      Choose vocabulary that matches your learning goals
+                    </div>
+                  </div>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={selectAllWords}
+                      className="btn-secondary bg-white shadow-md"
+                    >
+                      {selectedWords.size === vocabularyResults.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                    <button
+                      onClick={saveSelectedWords}
+                      disabled={selectedWords.size === 0 || savingSelected}
+                      className="btn-primary shadow-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                    >
+                      {savingSelected ? (
+                        <>
+                          <LoadingSpinner size="sm" className="mr-2" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <BookOpen className="h-4 w-4 mr-2" />
+                          Save Selected ({selectedWords.size})
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-6">
+                  <div className="overflow-x-auto">
+                    <table className="table">
+                  <thead className="table-header">
+                    <tr>
+                      <th className="table-header-cell w-12">
+                        <input
+                          type="checkbox"
+                          checked={selectedWords.size === vocabularyResults.length && vocabularyResults.length > 0}
+                          onChange={selectAllWords}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </th>
+                      <th className="table-header-cell">Word</th>
+                      <th className="table-header-cell">Type</th>
+                      <th className="table-header-cell">CEFR</th>
+                      <th className="table-header-cell">Definition</th>
+                      <th className="table-header-cell">Vietnamese</th>
+                      <th className="table-header-cell">Example</th>
+                    </tr>
+                  </thead>
+                  <tbody className="table-body">
+                    {vocabularyResults.map((item, index) => (
+                      <tr key={index} className={selectedWords.has(index) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
+                        <td className="table-cell">
+                          <input
+                            type="checkbox"
+                            checked={selectedWords.has(index)}
+                            onChange={() => toggleWordSelection(index)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="table-cell">
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              {item.word}
+                            </div>
+                            {item.ipaPronunciation && (
+                              <div className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                /{item.ipaPronunciation}/
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="table-cell">
+                          {item.wordType && (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getWordTypeColor(item.wordType)}`}>
+                              {item.wordType}
+                            </span>
+                          )}
+                        </td>
+                        <td className="table-cell">
+                          {item.cefrLevel && (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCefrColor(item.cefrLevel)}`}>
+                              {item.cefrLevel}
+                            </span>
+                          )}
+                        </td>
+                        <td className="table-cell max-w-xs">
+                          <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap break-words">
+                            {item.definition}
+                          </p>
+                        </td>
+                        <td className="table-cell max-w-xs">
+                          <p className="text-sm text-gray-900 dark:text-white break-words">
+                            {item.vietnameseTranslation || '-'}
+                          </p>
+                        </td>
+                        <td className="table-cell max-w-xs">
+                          <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap break-words">
+                            {item.exampleSentence || '-'}
+                          </p>
+                        </td>
+                      </tr>
+                    ))}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

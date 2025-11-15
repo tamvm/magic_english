@@ -34,7 +34,7 @@ class AIService {
       const req = protocol.request(url, {
         method: options.method || 'GET',
         headers: options.headers || {},
-        timeout: options.timeout || 30000,
+        timeout: options.timeout || 90000, // Increased to 90 seconds for AI requests
       }, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
@@ -98,7 +98,11 @@ Ensure the response is valid JSON only, without any additional text or explanati
       });
 
       if (response.choices && response.choices[0]) {
-        const content = response.choices[0].message.content;
+        let content = response.choices[0].message.content;
+
+        // Clean up the response - remove markdown code blocks if present
+        content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+
         try {
           return JSON.parse(content);
         } catch (parseError) {
@@ -124,6 +128,104 @@ Ensure the response is valid JSON only, without any additional text or explanati
         vietnameseTranslation: "",
         synonyms: ""
       };
+    }
+  }
+
+  async analyzeWebsiteContent(content, userCefrLevel = 'B2', options = {}) {
+    const { limit = 20 } = options;
+
+    if (!content || typeof content !== 'string') {
+      throw new Error('Content must be a non-empty string');
+    }
+
+    const prompt = `You are an experienced English teacher.
+My English level: ${userCefrLevel} (CEFR).
+Analyze the content below and extract terms or expressions I probably don't know, to help me expand my English vocabulary.
+
+🎯 Extraction Rules
+Include: idioms, phrasal verbs, advanced/uncommon vocabulary, cultural references, technical terms
+Exclude: proper names (people, places, brands, organizations)
+
+✅ Focus on quality over quantity — include only useful and memorable items.
+🪄 Make translations natural in Vietnamese, and sentences practical for memory.
+🔤 Use standard British IPA transcription (e.g., /ˈvɒk.jʊ.lə.ri/).
+
+Content to analyze:
+"""
+${content.substring(0, 8000)} ${content.length > 8000 ? '...' : ''}
+"""
+
+Return a JSON array of vocabulary items (maximum ${limit} items), each with:
+{
+  "word": "vocabulary item or phrase",
+  "definition": "clear English definition",
+  "wordType": "noun/verb/adjective/phrase/idiom/etc",
+  "cefrLevel": "estimated CEFR level (A1-C2)",
+  "ipaPronunciation": "British IPA pronunciation",
+  "exampleSentence": "natural example sentence for memorization",
+  "vietnameseTranslation": "natural Vietnamese translation",
+  "synonyms": "comma-separated list of synonyms",
+  "notes": "usage notes or cultural context if relevant",
+  "tags": ["tag1", "tag2"]
+}
+
+Provide only valid JSON array without additional text. Focus on words that are challenging but learnable for a ${userCefrLevel} level student.`;
+
+    try {
+      const response = await this.makeRequest('chat/completions', {
+        model: this.config.model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+      });
+
+      if (response.choices && response.choices[0]) {
+        let content = response.choices[0].message.content;
+
+        // Clean up the response - remove markdown code blocks if present
+        content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+
+        try {
+          const vocabulary = JSON.parse(content);
+
+          // Validate that it's an array
+          if (!Array.isArray(vocabulary)) {
+            throw new Error('Response is not an array');
+          }
+
+          // Validate each item and apply limits
+          const validatedVocabulary = vocabulary
+            .slice(0, limit)
+            .map(item => ({
+              word: item.word || '',
+              definition: item.definition || '',
+              wordType: item.wordType || 'unknown',
+              cefrLevel: item.cefrLevel || 'B2',
+              ipaPronunciation: item.ipaPronunciation || '',
+              exampleSentence: item.exampleSentence || '',
+              vietnameseTranslation: item.vietnameseTranslation || '',
+              synonyms: item.synonyms || '',
+              notes: item.notes || '',
+              tags: Array.isArray(item.tags) ? item.tags : []
+            }))
+            .filter(item => item.word && item.definition);
+
+          return validatedVocabulary;
+        } catch (parseError) {
+          console.error('Failed to parse AI response:', content);
+          throw new Error('Invalid AI response format');
+        }
+      }
+
+      throw new Error('No response from AI service');
+    } catch (error) {
+      console.error('AI website content analysis error:', error);
+      throw new Error(`Website analysis failed: ${error.message}`);
     }
   }
 
@@ -182,7 +284,11 @@ Provide only valid JSON without additional text.`;
       });
 
       if (response.choices && response.choices[0]) {
-        const content = response.choices[0].message.content;
+        let content = response.choices[0].message.content;
+
+        // Clean up the response - remove markdown code blocks if present
+        content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+
         try {
           return JSON.parse(content);
         } catch (parseError) {

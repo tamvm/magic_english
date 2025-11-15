@@ -3,7 +3,7 @@ import axios from 'axios'
 // Create axios instance with default config
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api',
-  timeout: 30000,
+  timeout: 120000, // Increased to 2 minutes for content analysis
   headers: {
     'Content-Type': 'application/json',
   },
@@ -96,6 +96,9 @@ export const aiAPI = {
   analyzeSentence: (sentence) =>
     api.post('/ai/analyze-sentence', { sentence }),
 
+  analyzeContent: (data) =>
+    api.post('/ai/analyze-content', data),
+
   chat: (message, conversationId) =>
     api.post('/ai/chat', { message, conversationId }),
 
@@ -121,6 +124,9 @@ export const profileAPI = {
 
   useStreakFreeze: () =>
     api.post('/profile/use-freeze'),
+
+  updateCefrLevel: (cefrLevel) =>
+    api.put('/profile/cefr-level', { cefrLevel }),
 }
 
 export default api
