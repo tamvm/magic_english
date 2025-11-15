@@ -1,0 +1,126 @@
+import axios from 'axios'
+
+// Create axios instance with default config
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Request interceptor to add auth token
+api.interceptors.request.use(
+  async (config) => {
+    // Get token from Supabase auth
+    if (typeof window !== 'undefined') {
+      const { createClient } = await import('@supabase/supabase-js')
+      const supabase = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      )
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        config.headers.Authorization = `Bearer ${session.access_token}`
+      }
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const message = error.response?.data?.error || error.message || 'Something went wrong'
+
+    // Handle 401 errors (unauthorized)
+    if (error.response?.status === 401) {
+      // Redirect to login page or refresh token
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+    }
+
+    return Promise.reject(new Error(message))
+  }
+)
+
+// API endpoints
+export const authAPI = {
+  signUp: (email, password, fullName) =>
+    api.post('/users/signup', { email, password, fullName }),
+
+  signIn: (email, password) =>
+    api.post('/users/signin', { email, password }),
+
+  signOut: () =>
+    api.post('/users/signout'),
+
+  getProfile: () =>
+    api.get('/users/me'),
+
+  updateProfile: (data) =>
+    api.put('/users/me', data),
+
+  refreshToken: (refreshToken) =>
+    api.post('/users/refresh', { refresh_token: refreshToken }),
+}
+
+export const wordsAPI = {
+  getWords: (params) =>
+    api.get('/words', { params }),
+
+  getWord: (id) =>
+    api.get(`/words/${id}`),
+
+  createWord: (data) =>
+    api.post('/words', data),
+
+  updateWord: (id, data) =>
+    api.put(`/words/${id}`, data),
+
+  deleteWord: (id) =>
+    api.delete(`/words/${id}`),
+
+  bulkOperation: (data) =>
+    api.post('/words/bulk', data),
+}
+
+export const aiAPI = {
+  analyzeWord: (word, options = {}) =>
+    api.post('/ai/analyze-word', { word, ...options }),
+
+  analyzeSentence: (sentence) =>
+    api.post('/ai/analyze-sentence', { sentence }),
+
+  chat: (message, conversationId) =>
+    api.post('/ai/chat', { message, conversationId }),
+
+  getConfig: () =>
+    api.get('/ai/config'),
+
+  testConnection: () =>
+    api.post('/ai/test-connection'),
+}
+
+export const profileAPI = {
+  getProfile: () =>
+    api.get('/profile'),
+
+  recordActivity: (data) =>
+    api.post('/profile/activity', data),
+
+  updateGoals: (data) =>
+    api.put('/profile/goals', data),
+
+  getActivityHistory: (days = 30) =>
+    api.get('/profile/activity-history', { params: { days } }),
+
+  useStreakFreeze: () =>
+    api.post('/profile/use-freeze'),
+}
+
+export default api
