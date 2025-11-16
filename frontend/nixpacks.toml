@@ -1,0 +1,14 @@
+[variables]
+NODE_VERSION = "20.11.1"
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm"]
+
+[phases.install]
+cmds = ["npm ci --no-cache --prefer-offline"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npx serve -s dist -p $PORT"
