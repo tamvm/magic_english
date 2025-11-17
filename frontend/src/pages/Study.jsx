@@ -8,38 +8,36 @@ import {
   BarChart3,
   X,
   Check,
-  RotateCcw,
+  HelpCircle,
+  SkipForward,
 } from 'lucide-react';
 
 import { useFlashcards } from '../hooks/useFlashcards';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import FlashCard from '../components/Flashcards/FlashCard';
-import QuizQuestion from '../components/Flashcards/QuizQuestion';
-import StudyStats from '../components/Flashcards/StudyStats';
 
 const Study = () => {
   const navigate = useNavigate();
   const {
     dueCards,
     currentCard,
+    currentCardIndex,
     sessionStats,
     reviewCard,
+    skipCard,
     startSession,
     endSession,
-    getQuizQuestions,
-    submitQuizAnswer,
     loading,
-    error
+    error,
+    cardsRemaining
   } = useFlashcards();
 
-  const [studyMode, setStudyMode] = useState('flashcard'); // 'flashcard' or 'quiz'
   const [isFlipped, setIsFlipped] = useState(false);
-  const [currentQuiz, setCurrentQuiz] = useState(null);
-  const [showAnswer, setShowAnswer] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [cardStartTime, setCardStartTime] = useState(null);
   const [showSessionEnd, setShowSessionEnd] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
   // Study session state
   const [studyStats, setStudyStats] = useState({
@@ -63,10 +61,9 @@ const Study = () => {
 
   // Set card start time when new card appears
   useEffect(() => {
-    if (currentCard && !cardStartTime) {
+    if (currentCard) {
       setCardStartTime(Date.now());
       setIsFlipped(false);
-      setShowAnswer(false);
     }
   }, [currentCard]);
 
@@ -75,71 +72,57 @@ const Study = () => {
     if (showSessionEnd) return;
 
     // Prevent default for all our shortcuts
-    const shortcuts = ['Space', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyF', 'KeyQ', 'Escape'];
+    const shortcuts = ['Space', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyS', 'Escape', 'Slash'];
     if (shortcuts.includes(event.code)) {
       event.preventDefault();
     }
 
-    if (studyMode === 'flashcard') {
-      switch (event.code) {
-        case 'Space':
-          if (!isFlipped) {
-            setIsFlipped(true);
-          }
-          break;
-        case 'Digit1':
-          if (isFlipped) handleCardRating(1);
-          break;
-        case 'Digit2':
-          if (isFlipped) handleCardRating(2);
-          break;
-        case 'Digit3':
-          if (isFlipped) handleCardRating(3);
-          break;
-        case 'Digit4':
-          if (isFlipped) handleCardRating(4);
-          break;
-        case 'KeyF':
-          setIsFlipped(!isFlipped);
-          break;
-        case 'KeyQ':
-          handleSwitchMode();
-          break;
-        case 'Escape':
-          handleEndSession();
-          break;
-      }
-    } else if (studyMode === 'quiz') {
-      switch (event.code) {
-        case 'Digit1':
-        case 'Digit2':
-        case 'Digit3':
-        case 'Digit4':
-          if (currentQuiz && !showAnswer) {
-            const optionIndex = parseInt(event.code.slice(-1)) - 1;
-            if (currentQuiz.options && optionIndex < currentQuiz.options.length) {
-              handleQuizAnswer(currentQuiz.options[optionIndex]);
-            }
-          } else if (showAnswer) {
-            handleNextCard();
-          }
-          break;
-        case 'KeyF':
-          setStudyMode('flashcard');
-          break;
-        case 'Escape':
-          handleEndSession();
-          break;
-      }
+    // Global shortcuts
+    if (event.code === 'Slash' && event.shiftKey) { // ? key
+      setShowShortcutsHelp(!showShortcutsHelp);
+      return;
     }
-  }, [isFlipped, studyMode, currentQuiz, showAnswer, showSessionEnd]);
+
+    switch (event.code) {
+      case 'Space':
+        setIsFlipped(!isFlipped);
+        break;
+      case 'Digit1':
+        handleCardRating(1);
+        break;
+      case 'Digit2':
+        handleCardRating(2);
+        break;
+      case 'Digit3':
+        handleCardRating(3);
+        break;
+      case 'Digit4':
+        handleCardRating(4);
+        break;
+      case 'KeyS':
+        handleSkipCard();
+        break;
+      case 'Escape':
+        if (showShortcutsHelp) {
+          setShowShortcutsHelp(false);
+        } else {
+          handleEndSession();
+        }
+        break;
+    }
+  }, [isFlipped, showSessionEnd, showShortcutsHelp]);
 
   useKeyboardShortcuts(handleKeyPress);
 
   const handleCardRating = async (rating) => {
-    if (!currentCard || !cardStartTime) return;
+    if (!currentCard) {
+      console.log('No currentCard available');
+      return;
+    }
 
-    const responseTime = Date.now() - cardStartTime;
+    // Set cardStartTime if it doesn't exist (for immediate rating)
+    const startTime = cardStartTime || Date.now();
+    const responseTime = Date.now() - startTime;
 
     try {
       await reviewCard(currentCard.id, rating, responseTime);
@@ -164,60 +147,24 @@ const Study = () => {
     }
   };
 
-  const handleSwitchMode = async () => {
-    if (!currentCard) return;
+  const handleSkipCard = () => {
+    console.log('Skipping card');
 
-    if (studyMode === 'flashcard') {
-      // Switch to quiz mode
-      try {
-        const questions = await getQuizQuestions(currentCard.id);
-        if (questions.length > 0) {
-          setCurrentQuiz(questions[0]);
-          setStudyMode('quiz');
-          setShowAnswer(false);
-          setCardStartTime(Date.now());
-        }
-      } catch (error) {
-        console.error('Failed to get quiz questions:', error);
-      }
-    } else {
-      // Switch to flashcard mode
-      setStudyMode('flashcard');
-      setCurrentQuiz(null);
-      setIsFlipped(false);
-      setShowAnswer(false);
-    }
-  };
-
-  const handleQuizAnswer = async (answer) => {
-    if (!currentQuiz || !currentCard || !cardStartTime) return;
-
-    const responseTime = Date.now() - cardStartTime;
-
-    try {
-      const result = await submitQuizAnswer(currentQuiz.id, answer, responseTime, currentCard.id);
-
-      setShowAnswer(true);
-
-      // Update stats
-      setStudyStats(prev => ({
-        ...prev,
-        totalAnswers: prev.totalAnswers + 1,
-        correctAnswers: prev.correctAnswers + (result.isCorrect ? 1 : 0),
-      }));
-
-    } catch (error) {
-      console.error('Failed to submit quiz answer:', error);
-    }
-  };
-
-  const handleNextCard = () => {
-    setStudyMode('flashcard');
-    setCurrentQuiz(null);
+    // Reset state for next card without rating
     setIsFlipped(false);
-    setShowAnswer(false);
     setCardStartTime(null);
+    setShowAnswer(false);
+
+    // Update stats to show card was studied but not answered
+    setStudyStats(prev => ({
+      ...prev,
+      cardsStudied: prev.cardsStudied + 1,
+    }));
+
+    // Actually skip to the next card
+    skipCard();
   };
+
 
   const handleEndSession = async () => {
     if (!sessionStartTime) return;
@@ -330,6 +277,10 @@ const Study = () => {
                   <BookOpen className="h-4 w-4" />
                   <span>{studyStats.cardsStudied}</span>
                 </div>
+                <div className="flex items-center space-x-1 text-blue-600 dark:text-blue-400 font-semibold">
+                  <Flame className="h-4 w-4" />
+                  <span>{cardsRemaining} remaining</span>
+                </div>
                 <div className="flex items-center space-x-1">
                   <BarChart3 className="h-4 w-4" />
                   <span>
@@ -349,11 +300,18 @@ const Study = () => {
 
             <div className="flex items-center space-x-2">
               <button
-                onClick={handleSwitchMode}
-                className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                title={studyMode === 'flashcard' ? 'Switch to Quiz (Q)' : 'Switch to Flashcard (F)'}
+                onClick={() => setShowShortcutsHelp(true)}
+                className="p-2 text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400"
+                title="Show Keyboard Shortcuts (?)"
               >
-                <RotateCcw className="h-5 w-5" />
+                <HelpCircle className="h-5 w-5" />
+              </button>
+              <button
+                onClick={handleSkipCard}
+                className="p-2 text-gray-600 hover:text-yellow-600 dark:text-gray-300 dark:hover:text-yellow-400"
+                title="Skip Card (S)"
+              >
+                <SkipForward className="h-5 w-5" />
               </button>
               <button
                 onClick={handleEndSession}
@@ -367,60 +325,94 @@ const Study = () => {
 
           {/* Main Content */}
           <div className="space-y-6">
-            {studyMode === 'flashcard' ? (
-              <FlashCard
-                card={currentCard}
-                isFlipped={isFlipped}
-                onFlip={() => setIsFlipped(!isFlipped)}
-                onRate={handleCardRating}
-                showRating={isFlipped}
-              />
-            ) : (
-              <QuizQuestion
-                question={currentQuiz}
-                onAnswer={handleQuizAnswer}
-                showAnswer={showAnswer}
-                onNext={handleNextCard}
-              />
-            )}
+            <FlashCard
+              card={currentCard}
+              isFlipped={isFlipped}
+              onFlip={() => setIsFlipped(!isFlipped)}
+              onRate={handleCardRating}
+              showRating={true}
+            />
 
-            {/* Keyboard Shortcuts Help */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-              <h3 className="text-lg font-semibold mb-3">Keyboard Shortcuts</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="flex justify-between">
-                    <span>Flip card:</span>
-                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space</kbd>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Again:</span>
-                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Hard:</span>
-                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">2</kbd>
-                  </div>
+            {/* Help hint */}
+            <div className="text-center text-gray-500 dark:text-gray-400 text-sm">
+              Press <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">?</kbd> for keyboard shortcuts
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Keyboard Shortcuts Modal */}
+      {showShortcutsHelp && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowShortcutsHelp(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Keyboard Shortcuts
+              </h3>
+              <button
+                onClick={() => setShowShortcutsHelp(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-1 gap-2">
+                <h4 className="font-medium text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-1">
+                  Flashcard Mode
+                </h4>
+                <div className="flex justify-between">
+                  <span>Flip card:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space</kbd>
                 </div>
-                <div>
-                  <div className="flex justify-between">
-                    <span>Good:</span>
-                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">3</kbd>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Easy:</span>
-                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">4</kbd>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Quiz mode:</span>
-                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Q</kbd>
-                  </div>
+                <div className="flex justify-between">
+                  <span>Again:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Hard:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">2</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Good:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">3</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Easy:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">4</kbd>
+                </div>
+
+                <h4 className="font-medium text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-1 mt-4">
+                  Actions
+                </h4>
+                <div className="flex justify-between">
+                  <span>Skip card:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">S</kbd>
+                </div>
+
+                <h4 className="font-medium text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-1 mt-4">
+                  General
+                </h4>
+                <div className="flex justify-between">
+                  <span>End session:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Esc</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Show shortcuts:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">?</kbd>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 };

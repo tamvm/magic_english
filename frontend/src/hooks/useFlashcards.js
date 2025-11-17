@@ -106,6 +106,29 @@ export const useFlashcards = () => {
     }
   };
 
+  // Skip a card without rating it
+  const skipCard = () => {
+    try {
+      setError(null);
+
+      // Move to next card without API call
+      const nextIndex = currentCardIndex + 1;
+      if (nextIndex < dueCards.length) {
+        setCurrentCard(dueCards[nextIndex]);
+        setCurrentCardIndex(nextIndex);
+      } else {
+        // No more cards, fetch new due cards
+        fetchDueCards();
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Failed to skip card:', err);
+      setError(err.message);
+      return false;
+    }
+  };
+
   // Get quiz questions for a card
   const getQuizQuestions = async (cardId, questionType = null, limit = 1) => {
     try {
@@ -191,6 +214,7 @@ export const useFlashcards = () => {
     startSession,
     endSession,
     reviewCard,
+    skipCard,
     getQuizQuestions,
     submitQuizAnswer,
     getStats,

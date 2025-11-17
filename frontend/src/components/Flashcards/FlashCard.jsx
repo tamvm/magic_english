@@ -51,13 +51,15 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
     <div className="max-w-2xl mx-auto">
       {/* Card */}
       <div
-        className={`relative w-full h-96 cursor-pointer transition-transform duration-300 transform-style-preserve-3d ${
-          isFlipped ? 'rotate-y-180' : ''
-        }`}
+        className="relative w-full h-96 cursor-pointer transition-transform duration-300"
+        style={{
+          transformStyle: 'preserve-3d',
+          transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
+        }}
         onClick={onFlip}
       >
         {/* Front Side */}
-        <div className="absolute inset-0 w-full h-full backface-hidden">
+        <div className="absolute inset-0 w-full h-full" style={{backfaceVisibility: 'hidden'}}>
           <div className="h-full bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-8 flex flex-col justify-center items-center text-center">
             {/* Card State Badge */}
             <div className={`px-3 py-1 rounded-full text-xs font-medium mb-4 ${getStateColor(card.state)}`}>
@@ -113,53 +115,89 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
         </div>
 
         {/* Back Side */}
-        <div className="absolute inset-0 w-full h-full backface-hidden rotate-y-180">
-          <div className="h-full bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-8 flex flex-col justify-center">
-            {/* Definition */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                Definition
-              </h3>
-              <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                {word.definition}
-              </p>
+        <div className="absolute inset-0 w-full h-full" style={{backfaceVisibility: 'hidden', transform: 'rotateY(180deg)'}}>
+          <div className="h-full bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 flex flex-col overflow-y-auto">
+            {/* Word at the top */}
+            <div className="text-center mb-4 border-b border-gray-200 dark:border-gray-600 pb-3">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                {word.word}
+              </h2>
+              {word.ipa_pronunciation && (
+                <div className="flex items-center justify-center space-x-2 mb-1">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    /{word.ipa_pronunciation}/
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      pronunciationAudio(word.word);
+                    }}
+                    className="p-1 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"
+                  >
+                    <Volume2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+              {word.word_type && (
+                <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-full inline-block">
+                  {word.word_type}
+                </span>
+              )}
             </div>
 
-            {/* Example Sentence */}
-            {word.example_sentence && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  Example
+            {/* Content area */}
+            <div className="flex-1 space-y-3 min-h-0">
+              {/* Definition */}
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                  Definition
                 </h3>
-                <p className="text-gray-700 dark:text-gray-300 italic">
-                  "{word.example_sentence}"
+                <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                  {word.definition}
                 </p>
               </div>
-            )}
 
-            {/* Vietnamese Translation */}
-            {word.vietnamese_translation && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  Vietnamese
-                </h3>
-                <p className="text-gray-700 dark:text-gray-300">
-                  {word.vietnamese_translation}
-                </p>
-              </div>
-            )}
+              {/* Example Sentence */}
+              {word.example_sentence && (
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                    Example
+                  </h3>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 italic">
+                    "{word.example_sentence}"
+                  </p>
+                </div>
+              )}
 
-            {/* Synonyms */}
-            {word.synonyms && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  Synonyms
-                </h3>
-                <p className="text-gray-700 dark:text-gray-300">
-                  {word.synonyms}
-                </p>
-              </div>
-            )}
+              {/* Vietnamese Translation */}
+              {word.vietnamese_translation && (
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                    Vietnamese
+                  </h3>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    {word.vietnamese_translation}
+                  </p>
+                </div>
+              )}
+
+              {/* Synonyms */}
+              {word.synonyms && (
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                    Synonyms
+                  </h3>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    {word.synonyms}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Flip hint */}
+            <p className="text-gray-500 dark:text-gray-400 text-xs text-center mt-3">
+              Press Space to flip back
+            </p>
           </div>
         </div>
       </div>
@@ -168,7 +206,10 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
       {showRating && (
         <div className="mt-6 grid grid-cols-4 gap-4">
           <button
-            onClick={() => onRate(1)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRate(1);
+            }}
             className="bg-red-500 hover:bg-red-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
           >
             <span className="font-bold">1</span>
@@ -179,7 +220,10 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
           </button>
 
           <button
-            onClick={() => onRate(2)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRate(2);
+            }}
             className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
           >
             <span className="font-bold">2</span>
@@ -190,7 +234,10 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
           </button>
 
           <button
-            onClick={() => onRate(3)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRate(3);
+            }}
             className="bg-green-500 hover:bg-green-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
           >
             <span className="font-bold">3</span>
@@ -201,7 +248,10 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
           </button>
 
           <button
-            onClick={() => onRate(4)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRate(4);
+            }}
             className="bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
           >
             <span className="font-bold">4</span>
@@ -213,18 +263,6 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
         </div>
       )}
 
-      {/* CSS for 3D flip effect */}
-      <style jsx>{`
-        .transform-style-preserve-3d {
-          transform-style: preserve-3d;
-        }
-        .backface-hidden {
-          backface-visibility: hidden;
-        }
-        .rotate-y-180 {
-          transform: rotateY(180deg);
-        }
-      `}</style>
     </div>
   );
 };
