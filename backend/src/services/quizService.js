@@ -306,14 +306,69 @@ Provide only valid JSON without additional text.`;
   }
 
   /**
-   * Generate questions for multiple words at once
+   * Generate questions for multiple words at once using efficient batching
    * @param {Array} words - Array of word objects
    * @param {Object} options - Generation options
    * @returns {Array} Array of all generated questions
    */
   async generateBatchQuestions(words, options = {}) {
+    const { batchSize = 10, useLegacyMethod = false } = options;
+
+    if (!words || !Array.isArray(words) || words.length === 0) {
+      return [];
+    }
+
+    // Use legacy method if requested (for backwards compatibility)
+    if (useLegacyMethod) {
+      return this.generateBatchQuestionsLegacy(words, options);
+    }
+
+    const allQuestions = [];
+
+    // Process words in batches for efficient AI requests
+    for (let i = 0; i < words.length; i += batchSize) {
+      const batch = words.slice(i, i + batchSize);
+
+      try {
+        console.log(`Generating quiz questions for batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(words.length/batchSize)} (${batch.length} words)`);
+
+        const batchQuestions = await aiService.generateBatchQuizQuestions(batch);
+        allQuestions.push(...batchQuestions);
+
+        console.log(`Successfully generated ${batchQuestions.length} questions for batch`);
+
+        // Add small delay between batches to avoid overwhelming the AI service
+        if (i + batchSize < words.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        console.error(`Failed to generate batch questions for words ${batch.map(w => w.word).join(', ')}:`, error);
+
+        // Fallback: try individual generation for this batch
+        console.log('Falling back to individual question generation for this batch...');
+        for (const word of batch) {
+          try {
+            const questions = await this.generateQuizQuestions(word, [this.questionTypes.DEFINITION_CHOICE], 1);
+            allQuestions.push(...questions);
+          } catch (individualError) {
+            console.error(`Failed to generate question for word ${word.word}:`, individualError);
+          }
+        }
+      }
+    }
+
+    return allQuestions;
+  }
+
+  /**
+   * Legacy method for generating batch questions (one by one)
+   * @param {Array} words - Array of word objects
+   * @param {Object} options - Generation options
+   * @returns {Array} Array of all generated questions
+   */
+  async generateBatchQuestionsLegacy(words, options = {}) {
     const {
-      questionTypes = Object.values(this.questionTypes),
+      questionTypes = [this.questionTypes.DEFINITION_CHOICE], // Default to just one type
       questionsPerType = 1,
       maxConcurrency = 3
     } = options;
@@ -342,6 +397,68 @@ Provide only valid JSON without additional text.`;
     }
 
     return allQuestions;
+  }
+
+  /**
+   * Generate and save quiz questions for words that don't have any
+   * @param {Array} words - Array of word objects
+   * @param {Object} supabase - Supabase client
+   * @returns {Object} Results summary
+   */
+  async generateAndSaveQuizQuestions(words, supabase) {
+    if (!words || !Array.isArray(words) || words.length === 0) {
+      return { generated: 0, saved: 0, errors: 0 };
+    }
+
+    try {
+      // Filter words that don't have quiz questions yet
+      const { data: existingQuestions, error: queryError } = await supabase
+        .from('quiz_questions')
+        .select('word_id')
+        .in('word_id', words.map(w => w.id));
+
+      if (queryError) {
+        throw queryError;
+      }
+
+      const existingWordIds = new Set(existingQuestions?.map(q => q.word_id) || []);
+      const wordsNeedingQuestions = words.filter(word => !existingWordIds.has(word.id));
+
+      if (wordsNeedingQuestions.length === 0) {
+        return { generated: 0, saved: 0, errors: 0, message: 'All words already have quiz questions' };
+      }
+
+      console.log(`Generating quiz questions for ${wordsNeedingQuestions.length} words without questions`);
+
+      // Generate questions in batches
+      const questions = await this.generateBatchQuestions(wordsNeedingQuestions);
+
+      if (questions.length === 0) {
+        return { generated: 0, saved: 0, errors: wordsNeedingQuestions.length };
+      }
+
+      // Save questions to database
+      const { data: savedQuestions, error: saveError } = await supabase
+        .from('quiz_questions')
+        .insert(questions)
+        .select();
+
+      if (saveError) {
+        console.error('Error saving quiz questions:', saveError);
+        return { generated: questions.length, saved: 0, errors: questions.length };
+      }
+
+      return {
+        generated: questions.length,
+        saved: savedQuestions?.length || 0,
+        errors: Math.max(0, questions.length - (savedQuestions?.length || 0)),
+        message: `Successfully generated and saved ${savedQuestions?.length || 0} quiz questions`
+      };
+
+    } catch (error) {
+      console.error('Error in generateAndSaveQuizQuestions:', error);
+      return { generated: 0, saved: 0, errors: words.length, error: error.message };
+    }
   }
 
   /**

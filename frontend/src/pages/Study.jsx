@@ -38,6 +38,9 @@ const Study = () => {
   const [cardStartTime, setCardStartTime] = useState(null);
   const [showSessionEnd, setShowSessionEnd] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [isRatingInProgress, setIsRatingInProgress] = useState(false);
+  const [reviewedCards, setReviewedCards] = useState([]);
+  const [showReview, setShowReview] = useState(false);
 
   // Study session state
   const [studyStats, setStudyStats] = useState({
@@ -50,13 +53,21 @@ const Study = () => {
 
   // Initialize session
   useEffect(() => {
+    // Reset all session states on mount
+    setShowSessionEnd(false);
+    setShowReview(false);
+    setReviewedCards([]);
+    setStudyStats({
+      cardsStudied: 0,
+      newCards: 0,
+      reviewCards: 0,
+      correctAnswers: 0,
+      totalAnswers: 0,
+    });
+
     startSession();
     setSessionStartTime(Date.now());
-    return () => {
-      if (sessionStartTime) {
-        handleEndSession();
-      }
-    };
+    // Remove cleanup - let user explicitly end session
   }, []);
 
   // Set card start time when new card appears
@@ -64,12 +75,13 @@ const Study = () => {
     if (currentCard) {
       setCardStartTime(Date.now());
       setIsFlipped(false);
+      setIsRatingInProgress(false);
     }
   }, [currentCard]);
 
   // Keyboard shortcuts
   const handleKeyPress = useCallback((event) => {
-    if (showSessionEnd) return;
+    if (showSessionEnd || isRatingInProgress) return;
 
     // Prevent default for all our shortcuts
     const shortcuts = ['Space', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyS', 'Escape', 'Slash'];
@@ -88,16 +100,13 @@ const Study = () => {
         setIsFlipped(!isFlipped);
         break;
       case 'Digit1':
-        handleCardRating(1);
+        handleCardRating(2);  // Map 1 to Hard (rating 2)
         break;
       case 'Digit2':
-        handleCardRating(2);
+        handleCardRating(3);  // Map 2 to Good (rating 3)
         break;
       case 'Digit3':
-        handleCardRating(3);
-        break;
-      case 'Digit4':
-        handleCardRating(4);
+        handleCardRating(4);  // Map 3 to Easy (rating 4)
         break;
       case 'KeyS':
         handleSkipCard();
@@ -115,10 +124,12 @@ const Study = () => {
   useKeyboardShortcuts(handleKeyPress);
 
   const handleCardRating = async (rating) => {
-    if (!currentCard) {
-      console.log('No currentCard available');
+    if (!currentCard || isRatingInProgress) {
+      console.log('No currentCard available or rating already in progress');
       return;
     }
+
+    setIsRatingInProgress(true);
 
     // Set cardStartTime if it doesn't exist (for immediate rating)
     const startTime = cardStartTime || Date.now();
@@ -127,23 +138,42 @@ const Study = () => {
     try {
       await reviewCard(currentCard.id, rating, responseTime);
 
+      // Track this card for review if it was hard (rating <= 2) or if user wants to review
+      const reviewedCard = {
+        ...currentCard,
+        userRating: rating,
+        wasHard: rating <= 2,
+        reviewedAt: new Date().toISOString(),
+        responseTime: responseTime
+      };
+
+      setReviewedCards(prev => [...prev, reviewedCard]);
+
       // Update stats
+      const newCardsStudied = studyStats.cardsStudied + 1;
       setStudyStats(prev => ({
         ...prev,
-        cardsStudied: prev.cardsStudied + 1,
+        cardsStudied: newCardsStudied,
         totalAnswers: prev.totalAnswers + 1,
         correctAnswers: prev.correctAnswers + (rating >= 3 ? 1 : 0),
         newCards: prev.newCards + (currentCard.state === 'new' ? 1 : 0),
         reviewCards: prev.reviewCards + (currentCard.state !== 'new' ? 1 : 0),
       }));
 
+      // Show review page after 10 cards
+      if (newCardsStudied % 10 === 0) {
+        setShowReview(true);
+        return; // Don't continue to next card, show review first
+      }
+
       // Reset for next card
       setIsFlipped(false);
       setCardStartTime(null);
-      setShowAnswer(false);
 
     } catch (error) {
       console.error('Failed to review card:', error);
+    } finally {
+      setIsRatingInProgress(false);
     }
   };
 
@@ -153,7 +183,6 @@ const Study = () => {
     // Reset state for next card without rating
     setIsFlipped(false);
     setCardStartTime(null);
-    setShowAnswer(false);
 
     // Update stats to show card was studied but not answered
     setStudyStats(prev => ({
@@ -169,6 +198,13 @@ const Study = () => {
   const handleEndSession = async () => {
     if (!sessionStartTime) return;
 
+    // Only end session if user actually studied cards
+    if (studyStats.cardsStudied === 0) {
+      // Just navigate back to dashboard if no cards were studied
+      navigate('/dashboard');
+      return;
+    }
+
     const totalTime = Math.round((Date.now() - sessionStartTime) / 1000);
 
     try {
@@ -181,14 +217,152 @@ const Study = () => {
         totalAnswers: studyStats.totalAnswers,
       });
 
+      // At session end, go directly to session complete (no review)
       setShowSessionEnd(true);
     } catch (error) {
       console.error('Failed to end session:', error);
     }
   };
 
-  // Show session end screen
-  if (showSessionEnd) {
+  // Show review screen
+  if (showReview) {
+    const hardCards = reviewedCards.filter(card => card.wasHard);
+
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                📚 Review Session
+              </h2>
+              <p className="text-gray-600 dark:text-gray-300">
+                Time to review the cards you found difficult
+              </p>
+            </div>
+
+            {/* Hard Cards Section */}
+            {hardCards.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 px-3 py-1 rounded-full text-sm font-medium mr-3">
+                    Difficult Cards ({hardCards.length})
+                  </span>
+                </h3>
+
+                <div className="overflow-x-auto">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th className="table-header">Word</th>
+                        <th className="table-header">Definition</th>
+                        <th className="table-header">Example</th>
+                        <th className="table-header">Vietnamese</th>
+                        <th className="table-header">Rating</th>
+                        <th className="table-header">Response Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="table-body">
+                      {hardCards.map((card, index) => (
+                        <tr key={`hard-${index}`}>
+                          <td className="table-cell">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                {card.words.word}
+                              </span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">
+                                {card.words.ipa_pronunciation}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-gray-700 dark:text-gray-300 text-sm truncate">
+                              {card.words.definition}
+                            </p>
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-gray-600 dark:text-gray-400 text-sm truncate">
+                              "{card.words.example_sentence}"
+                            </p>
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-gray-600 dark:text-gray-400 text-sm truncate">
+                              {card.words.vietnamese_translation}
+                            </p>
+                          </td>
+                          <td className="table-cell">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              card.userRating === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
+                              card.userRating === 1 ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
+                              'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                            }`}>
+                              {card.userRating === 2 ? 'Hard' : card.userRating === 1 ? 'Again' : 'Good'}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            <span className="text-gray-500 dark:text-gray-400 text-sm">
+                              {Math.round(card.responseTime / 1000)}s
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* No Hard Cards Message */}
+            {hardCards.length === 0 && (
+              <div className="text-center mb-8 p-8 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <h3 className="text-lg font-semibold text-green-800 dark:text-green-200 mb-2">
+                  🎉 Great Job!
+                </h3>
+                <p className="text-green-700 dark:text-green-300">
+                  You didn't find any cards difficult in this session. Keep up the excellent work!
+                </p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={() => {
+                  setShowReview(false);
+                  // Keep reviewed cards for final session review
+                  // Reset card flipping state and continue
+                  setIsFlipped(false);
+                  setCardStartTime(null);
+                  setIsRatingInProgress(false);
+                }}
+                className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Continue Studying
+              </button>
+              <button
+                onClick={() => {
+                  setShowReview(false);
+                  setShowSessionEnd(true);
+                }}
+                className="bg-green-600 text-white py-2 px-6 rounded-md hover:bg-green-700 transition-colors"
+              >
+                Finish Session
+              </button>
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="bg-gray-600 text-white py-2 px-6 rounded-md hover:bg-gray-700 transition-colors"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show session end screen (only after actual studying)
+  if (showSessionEnd && studyStats.cardsStudied > 0) {
     const totalTime = sessionStartTime ? Math.round((Date.now() - sessionStartTime) / 1000) : 0;
     const accuracy = studyStats.totalAnswers > 0 ?
       Math.round((studyStats.correctAnswers / studyStats.totalAnswers) * 100) : 0;
@@ -281,6 +455,9 @@ const Study = () => {
                   <Flame className="h-4 w-4" />
                   <span>{cardsRemaining} remaining</span>
                 </div>
+                <div className="flex items-center space-x-1 text-purple-600 dark:text-purple-400">
+                  <span className="text-xs">Review in: {10 - (studyStats.cardsStudied % 10)} cards</span>
+                </div>
                 <div className="flex items-center space-x-1">
                   <BarChart3 className="h-4 w-4" />
                   <span>
@@ -331,6 +508,7 @@ const Study = () => {
               onFlip={() => setIsFlipped(!isFlipped)}
               onRate={handleCardRating}
               showRating={true}
+              isRatingInProgress={isRatingInProgress}
             />
 
             {/* Help hint */}
@@ -373,20 +551,16 @@ const Study = () => {
                   <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space</kbd>
                 </div>
                 <div className="flex justify-between">
-                  <span>Again:</span>
+                  <span>Hard:</span>
                   <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd>
                 </div>
                 <div className="flex justify-between">
-                  <span>Hard:</span>
+                  <span>Good:</span>
                   <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">2</kbd>
                 </div>
                 <div className="flex justify-between">
-                  <span>Good:</span>
-                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">3</kbd>
-                </div>
-                <div className="flex justify-between">
                   <span>Easy:</span>
-                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">4</kbd>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">3</kbd>
                 </div>
 
                 <h4 className="font-medium text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-1 mt-4">

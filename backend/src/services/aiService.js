@@ -509,6 +509,118 @@ Provide only valid JSON without additional text.`;
     };
   }
 
+  async generateBatchQuizQuestions(words) {
+    if (!words || !Array.isArray(words) || words.length === 0) {
+      throw new Error('Words array must be a non-empty array');
+    }
+
+    const prompt = `Generate quiz questions for the following English words. For each word, create exactly ONE quiz question of a randomly chosen type from: fill_blank, definition_choice, synonym_choice, or context_choice.
+
+Words to generate questions for:
+${words.map((word, index) => `${index + 1}. "${word.word}"
+   - Definition: ${word.definition}
+   - Type: ${word.word_type || 'unknown'}
+   - Level: ${word.cefr_level || 'B2'}
+   - Example: ${word.example_sentence || ''}
+   - Vietnamese: ${word.vietnamese_translation || ''}
+   - Synonyms: ${word.synonyms || ''}`).join('\n\n')}
+
+For each word, create one quiz question following these guidelines:
+- fill_blank: Create a sentence with a blank where the word should go
+- definition_choice: Ask "What does [word] mean?" with 4 definition options
+- synonym_choice: Ask "Which word is closest in meaning to [word]?" with 4 word options
+- context_choice: Ask "In which sentence is [word] used correctly?" with 2 sentence options
+- All multiple choice questions should have exactly 4 options (except context_choice which has 2)
+- Difficulty should match the word's CEFR level
+- Options should be plausible distractors
+
+Return a JSON array with one question per word:
+[
+  {
+    "word_id": "${words[0]?.id || 'word1'}",
+    "question_type": "fill_blank|definition_choice|synonym_choice|context_choice",
+    "question_text": "Question text here",
+    "correct_answer": "Correct answer",
+    "options": ["option1", "option2", "option3", "option4"],
+    "explanation": "Brief explanation of the correct answer"
+  }
+]
+
+For fill_blank questions, use empty array for options: "options": []
+For context_choice questions, use exactly 2 sentence options: "options": ["correct sentence", "incorrect sentence"]
+
+Provide only valid JSON array without additional text.`;
+
+    try {
+      const response = await this.makeRequest('chat/completions', {
+        model: this.config.model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 3000,
+      }, {
+        timeout: 60000, // 60 seconds timeout for batch processing
+      });
+
+      if (response.choices && response.choices[0]) {
+        let content = response.choices[0].message.content;
+
+        // Clean up the response - remove markdown code blocks if present
+        content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+
+        try {
+          const questions = JSON.parse(content);
+
+          // Validate that it's an array
+          if (!Array.isArray(questions)) {
+            throw new Error('Response is not an array');
+          }
+
+          // Validate and clean up each question
+          const validatedQuestions = questions.map((question, index) => {
+            const word = words[index];
+            if (!word) return null;
+
+            // Map AI response question types to database types
+            let questionType = question.question_type || 'definition_choice';
+            if (questionType === 'multiple_choice') {
+              questionType = 'definition_choice'; // Default fallback
+            }
+
+            // Ensure question type is valid
+            const validTypes = ['fill_blank', 'definition_choice', 'synonym_choice', 'context_choice'];
+            if (!validTypes.includes(questionType)) {
+              questionType = 'definition_choice'; // Safe fallback
+            }
+
+            return {
+              word_id: word.id,
+              question_type: questionType,
+              question_text: question.question_text || '',
+              correct_answer: question.correct_answer || '',
+              options: Array.isArray(question.options) ? question.options : [],
+              explanation: question.explanation || '',
+            };
+          }).filter(q => q && q.question_text && q.correct_answer);
+
+          return validatedQuestions;
+        } catch (parseError) {
+          console.error('Failed to parse AI batch quiz response:', content);
+          throw new Error('Invalid AI response format for batch quiz questions');
+        }
+      }
+
+      throw new Error('No response from AI service');
+    } catch (error) {
+      console.error('AI batch quiz generation error:', error);
+      throw new Error(`Batch quiz generation failed: ${error.message}`);
+    }
+  }
+
   generateId() {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
   }

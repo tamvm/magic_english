@@ -7,7 +7,8 @@ import {
   PenTool,
   User,
   Settings,
-  Sparkles
+  Sparkles,
+  HelpCircle
 } from 'lucide-react'
 
 const navigation = [
@@ -20,6 +21,11 @@ const navigation = [
     name: 'Vocabulary',
     href: '/vocabulary',
     icon: BookOpen,
+  },
+  {
+    name: 'Quiz Questions',
+    href: '/quiz-questions',
+    icon: HelpCircle,
   },
   {
     name: 'Study Cards',

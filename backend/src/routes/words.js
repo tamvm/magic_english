@@ -1,5 +1,6 @@
 import express from 'express';
 import Joi from 'joi';
+import { quizService } from '../services/quizService.js';
 
 const router = express.Router();
 
@@ -245,6 +246,15 @@ router.post('/', async (req, res, next) => {
       console.error('Failed to update profile stats:', profileError);
     }
 
+    // Generate quiz question for the new word (async, don't wait for completion)
+    quizService.generateAndSaveQuizQuestions([word], req.supabase)
+      .then(result => {
+        console.log(`Quiz question generation result for word "${word.word}":`, result);
+      })
+      .catch(error => {
+        console.error(`Failed to generate quiz question for word "${word.word}":`, error);
+      });
+
     res.status(201).json({
       message: 'Word created successfully',
       word,
@@ -373,6 +383,17 @@ router.post('/bulk', async (req, res, next) => {
           return next(insertError);
         }
 
+        // Generate quiz questions for imported words (async, don't wait for completion)
+        if (insertedWords.length > 0) {
+          quizService.generateAndSaveQuizQuestions(insertedWords, req.supabase)
+            .then(result => {
+              console.log(`Batch quiz question generation result for ${insertedWords.length} imported words:`, result);
+            })
+            .catch(error => {
+              console.error(`Failed to generate quiz questions for imported words:`, error);
+            });
+        }
+
         res.status(201).json({
           message: `${insertedWords.length} words imported successfully`,
           words: insertedWords,
@@ -417,6 +438,99 @@ router.post('/bulk', async (req, res, next) => {
         res.status(400).json({ error: 'Invalid operation' });
     }
   } catch (error) {
+    next(error);
+  }
+});
+
+// Generate quiz questions for words that don't have any
+router.post('/generate-quiz-questions', async (req, res, next) => {
+  try {
+    const schema = Joi.object({
+      wordIds: Joi.array().items(Joi.string().uuid()).optional(),
+      regenerateAll: Joi.boolean().default(false),
+      batchSize: Joi.number().integer().min(1).max(20).default(10),
+    });
+
+    const { error, value } = schema.validate(req.body);
+    if (error) {
+      error.isJoi = true;
+      return next(error);
+    }
+
+    const { wordIds, regenerateAll, batchSize } = value;
+
+    let query = req.supabase
+      .from('words')
+      .select('*')
+      .eq('user_id', req.user.id);
+
+    // Filter by specific word IDs if provided
+    if (wordIds && wordIds.length > 0) {
+      query = query.in('id', wordIds);
+    }
+
+    const { data: words, error: wordsError } = await query;
+
+    if (wordsError) {
+      return next(wordsError);
+    }
+
+    if (!words || words.length === 0) {
+      return res.json({
+        message: 'No words found',
+        generated: 0,
+        saved: 0,
+        errors: 0,
+      });
+    }
+
+    let wordsToProcess = words;
+
+    // If not regenerating all, filter out words that already have quiz questions
+    if (!regenerateAll) {
+      const { data: existingQuestions, error: existingError } = await req.supabase
+        .from('quiz_questions')
+        .select('word_id')
+        .in('word_id', words.map(w => w.id));
+
+      if (existingError) {
+        return next(existingError);
+      }
+
+      const existingWordIds = new Set(existingQuestions?.map(q => q.word_id) || []);
+      wordsToProcess = words.filter(word => !existingWordIds.has(word.id));
+    } else {
+      // If regenerating all, delete existing questions first
+      const { error: deleteError } = await req.supabase
+        .from('quiz_questions')
+        .delete()
+        .in('word_id', words.map(w => w.id));
+
+      if (deleteError) {
+        console.error('Error deleting existing quiz questions:', deleteError);
+        return next(deleteError);
+      }
+    }
+
+    if (wordsToProcess.length === 0) {
+      return res.json({
+        message: regenerateAll ? 'No words to regenerate questions for' : 'All selected words already have quiz questions',
+        generated: 0,
+        saved: 0,
+        errors: 0,
+      });
+    }
+
+    const result = await quizService.generateAndSaveQuizQuestions(wordsToProcess, req.supabase);
+
+    res.json({
+      message: result.message || `Processed ${wordsToProcess.length} words`,
+      totalWordsProcessed: wordsToProcess.length,
+      ...result,
+    });
+
+  } catch (error) {
+    console.error('Quiz question generation endpoint error:', error);
     next(error);
   }
 });

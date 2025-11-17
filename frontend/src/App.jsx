@@ -9,6 +9,7 @@ import LoadingSpinner from './components/UI/LoadingSpinner'
 // Lazy load pages for better performance
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const Vocabulary = React.lazy(() => import('./pages/Vocabulary'))
+const QuizQuestions = React.lazy(() => import('./pages/QuizQuestions'))
 const Study = React.lazy(() => import('./pages/Study'))
 const Scoring = React.lazy(() => import('./pages/Scoring'))
 const Profile = React.lazy(() => import('./pages/Profile'))
@@ -57,6 +58,7 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/vocabulary" element={<Vocabulary />} />
+              <Route path="/quiz-questions" element={<QuizQuestions />} />
               <Route path="/study" element={<Study />} />
               <Route path="/scoring" element={<Scoring />} />
               <Route path="/profile" element={<Profile />} />

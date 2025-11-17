@@ -87,6 +87,9 @@ export const wordsAPI = {
 
   bulkOperation: (data) =>
     api.post('/words/bulk', data),
+
+  generateQuizQuestions: (data) =>
+    api.post('/words/generate-quiz-questions', data),
 }
 
 export const aiAPI = {
@@ -150,6 +153,9 @@ export const flashcardAPI = {
 
   getQuizQuestions: (cardId, params = {}) =>
     api.get(`/flashcards/${cardId}/quiz`, { params }),
+
+  getAllQuizQuestions: (params = {}) =>
+    api.get('/flashcards/quiz-questions', { params }),
 
   submitQuizAnswer: (questionId, data) =>
     api.post(`/flashcards/quiz/${questionId}/answer`, data),

@@ -647,4 +647,48 @@ async function updateUserStatistics(supabase, userId, rating, responseTime) {
   }
 }
 
+/**
+ * GET /api/flashcards/quiz-questions
+ * Get all quiz questions for the user's words
+ */
+router.get('/quiz-questions', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 1000 } = req.query;
+
+    const { data: questions, error } = await req.supabase
+      .from('quiz_questions')
+      .select(`
+        *,
+        words!inner(
+          id,
+          word,
+          definition,
+          word_type,
+          cefr_level,
+          example_sentence,
+          vietnamese_translation,
+          synonyms
+        )
+      `)
+      .eq('words.user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit));
+
+    if (error) {
+      console.error('Error fetching quiz questions:', error);
+      return res.status(500).json({ error: 'Failed to fetch quiz questions' });
+    }
+
+    res.json({
+      questions: questions || [],
+      total: questions?.length || 0
+    });
+
+  } catch (error) {
+    console.error('Quiz questions endpoint error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

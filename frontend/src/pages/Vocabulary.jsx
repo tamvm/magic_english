@@ -64,7 +64,7 @@ const Vocabulary = () => {
         setWords(prev => [response.data.savedWord, ...prev])
         setNewWord('')
         setShowAddForm(false)
-        toast.success('Word analyzed and saved successfully!')
+        toast.success('Word analyzed and saved successfully! Quiz question is being generated in the background.')
       } else if (response.data.analysis) {
         // Word was analyzed but not saved (could be due to autoSave: false or other reasons)
         toast.success('Word analyzed successfully!')
@@ -267,7 +267,7 @@ const Vocabulary = () => {
 
       if (response.data.words) {
         setWords(prev => [...response.data.words, ...prev])
-        toast.success(`${response.data.words.length} words saved successfully!`)
+        toast.success(`${response.data.words.length} words saved successfully! Quiz questions are being generated in the background.`)
 
         // Clear the content form and results
         setShowContentForm(false)

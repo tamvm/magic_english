@@ -6,7 +6,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 
-const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
+const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating, isRatingInProgress = false }) => {
   if (!card || !card.words) {
     return null;
   }
@@ -97,11 +97,7 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
             )}
 
             {/* Progress Info */}
-            <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
-              <div className="flex items-center space-x-1">
-                <Heart className="h-4 w-4" />
-                <span>Difficulty: <span className={getDifficultyColor(card.difficulty)}>{card.difficulty.toFixed(1)}</span></span>
-              </div>
+            <div className="flex items-center justify-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
               <div className="flex items-center space-x-1">
                 <Clock className="h-4 w-4" />
                 <span>Reps: {card.reps}</span>
@@ -204,29 +200,20 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
 
       {/* Rating Buttons */}
       {showRating && (
-        <div className="mt-6 grid grid-cols-4 gap-4">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRate(1);
-            }}
-            className="bg-red-500 hover:bg-red-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
-          >
-            <span className="font-bold">1</span>
-            <span className="text-xs">Again</span>
-            {nextIntervals[1] && (
-              <span className="text-xs opacity-80">{formatInterval(nextIntervals[1].interval)}</span>
-            )}
-          </button>
-
+        <div className="mt-6 grid grid-cols-3 gap-4">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onRate(2);
             }}
-            className="bg-orange-500 hover:bg-orange-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
+            disabled={isRatingInProgress}
+            className={`py-3 px-4 rounded-lg transition-colors flex flex-col items-center text-white ${
+              isRatingInProgress
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-orange-500 hover:bg-orange-600'
+            }`}
           >
-            <span className="font-bold">2</span>
+            <span className="font-bold">1</span>
             <span className="text-xs">Hard</span>
             {nextIntervals[2] && (
               <span className="text-xs opacity-80">{formatInterval(nextIntervals[2].interval)}</span>
@@ -238,9 +225,14 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
               e.stopPropagation();
               onRate(3);
             }}
-            className="bg-green-500 hover:bg-green-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
+            disabled={isRatingInProgress}
+            className={`py-3 px-4 rounded-lg transition-colors flex flex-col items-center text-white ${
+              isRatingInProgress
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-green-500 hover:bg-green-600'
+            }`}
           >
-            <span className="font-bold">3</span>
+            <span className="font-bold">2</span>
             <span className="text-xs">Good</span>
             {nextIntervals[3] && (
               <span className="text-xs opacity-80">{formatInterval(nextIntervals[3].interval)}</span>
@@ -252,9 +244,14 @@ const FlashCard = ({ card, isFlipped, onFlip, onRate, showRating }) => {
               e.stopPropagation();
               onRate(4);
             }}
-            className="bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-lg transition-colors flex flex-col items-center"
+            disabled={isRatingInProgress}
+            className={`py-3 px-4 rounded-lg transition-colors flex flex-col items-center text-white ${
+              isRatingInProgress
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-blue-500 hover:bg-blue-600'
+            }`}
           >
-            <span className="font-bold">4</span>
+            <span className="font-bold">3</span>
             <span className="text-xs">Easy</span>
             {nextIntervals[4] && (
               <span className="text-xs opacity-80">{formatInterval(nextIntervals[4].interval)}</span>
