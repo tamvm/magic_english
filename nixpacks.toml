@@ -1,5 +1,7 @@
-[providers]
-node = "18.x"
+providers = ["node"]
+
+[providers.node]
+version = "18.x"
 
 [phases.setup]
 nixPkgs = [

@@ -125,7 +125,7 @@ const Study = () => {
 
   // Handle quiz next (after seeing answer)
   const handleQuizNext = () => {
-    if (!showQuizAnswer) return;
+    if (!showQuizAnswer || isRatingInProgress) return;
 
     const isCorrect = quizAnswer === currentQuestion?.correct_answer;
 
@@ -161,6 +161,8 @@ const Study = () => {
       case 'Space':
         if (studyMode === 'flashcard') {
           setIsFlipped(!isFlipped);
+        } else if (studyMode === 'quiz' && showQuizAnswer) {
+          handleQuizNext();
         }
         break;
       case 'Digit1':
@@ -678,7 +680,7 @@ const Study = () => {
               {studyMode === 'quiz' && (
                 <span className="ml-4">
                   • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1-4</kbd> to select options
-                  • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Enter</kbd> to submit
+                  • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space/Enter</kbd> to continue
                 </span>
               )}
             </div>
@@ -717,6 +719,12 @@ const Study = () => {
                   <span>Flip card:</span>
                   <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space</kbd>
                 </div>
+                {studyMode === 'quiz' && (
+                  <div className="flex justify-between">
+                    <span>Continue (after answer):</span>
+                    <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space/Enter</kbd>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Hard:</span>
                   <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd>

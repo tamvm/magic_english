@@ -7,6 +7,7 @@ import {
 
 const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
   const [selectedAnswer, setSelectedAnswer] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   if (!question) {
     return (
@@ -183,10 +184,17 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
 
           {/* Next Button */}
           <button
-            onClick={onNext}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            onClick={() => {
+              if (isProcessing) return;
+              setIsProcessing(true);
+              onNext();
+              // Reset processing state after a short delay to allow next question to load
+              setTimeout(() => setIsProcessing(false), 300);
+            }}
+            disabled={isProcessing}
+            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
           >
-            Continue (Press any number key)
+            {isProcessing ? 'Processing...' : 'Continue (Press any number key or space)'}
           </button>
         </div>
       )}
