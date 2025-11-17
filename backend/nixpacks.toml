@@ -1,11 +1,11 @@
 [variables]
-NODE_VERSION = "20.11.1"
+NODE_VERSION = "20.18.1"
 
 [phases.setup]
 nixPkgs = ["nodejs_20", "npm"]
 
 [phases.install]
-cmds = ["npm ci --no-cache --prefer-offline"]
+cmds = ["npm install --production=false"]
 
 [start]
 cmd = "npm start"
