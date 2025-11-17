@@ -16,7 +16,7 @@ router.use(authMiddleware);
 router.get('/due', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { limit = 20, includeNew = true } = req.query;
+    const { limit = 20, includeNew = true, includeQuizQuestions = false } = req.query;
 
     const now = new Date().toISOString();
     let query = req.supabase
@@ -42,10 +42,39 @@ router.get('/due', async (req, res) => {
     }
 
     // Add next intervals for preview
-    const cardsWithIntervals = cards.map(card => ({
+    let cardsWithIntervals = cards.map(card => ({
       ...card,
       nextIntervals: fsrs.getNextIntervals(card)
     }));
+
+    // Include quiz questions if requested
+    if (includeQuizQuestions && cards.length > 0) {
+      const wordIds = cards.map(card => card.word_id);
+
+      const { data: quizQuestions, error: quizError } = await req.supabase
+        .from('quiz_questions')
+        .select('*')
+        .in('word_id', wordIds);
+
+      if (quizError) {
+        console.error('Error fetching quiz questions:', quizError);
+      } else {
+        // Group quiz questions by word_id
+        const questionsByWordId = {};
+        quizQuestions?.forEach(question => {
+          if (!questionsByWordId[question.word_id]) {
+            questionsByWordId[question.word_id] = [];
+          }
+          questionsByWordId[question.word_id].push(question);
+        });
+
+        // Add quiz questions to each card
+        cardsWithIntervals = cardsWithIntervals.map(card => ({
+          ...card,
+          quiz_questions: questionsByWordId[card.word_id] || []
+        }));
+      }
+    }
 
     res.json({
       cards: cardsWithIntervals,

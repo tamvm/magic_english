@@ -16,6 +16,7 @@ import { useFlashcards } from '../hooks/useFlashcards';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import FlashCard from '../components/Flashcards/FlashCard';
+import QuizQuestion from '../components/Flashcards/QuizQuestion';
 
 const Study = () => {
   const navigate = useNavigate();
@@ -28,6 +29,7 @@ const Study = () => {
     skipCard,
     startSession,
     endSession,
+    fetchDueCards,
     loading,
     error,
     cardsRemaining
@@ -41,6 +43,12 @@ const Study = () => {
   const [isRatingInProgress, setIsRatingInProgress] = useState(false);
   const [reviewedCards, setReviewedCards] = useState([]);
   const [showReview, setShowReview] = useState(false);
+
+  // Quiz mode state
+  const [studyMode, setStudyMode] = useState('flashcard'); // 'flashcard' or 'quiz'
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [quizAnswer, setQuizAnswer] = useState('');
+  const [showQuizAnswer, setShowQuizAnswer] = useState(false);
 
   // Study session state
   const [studyStats, setStudyStats] = useState({
@@ -76,8 +84,62 @@ const Study = () => {
       setCardStartTime(Date.now());
       setIsFlipped(false);
       setIsRatingInProgress(false);
+
+      // Set up quiz question if in quiz mode
+      if (studyMode === 'quiz' && currentCard.quiz_questions && currentCard.quiz_questions.length > 0) {
+        // Pick a random quiz question for this card
+        const randomQuestion = currentCard.quiz_questions[Math.floor(Math.random() * currentCard.quiz_questions.length)];
+        setCurrentQuestion(randomQuestion);
+        setShowQuizAnswer(false);
+        setQuizAnswer('');
+      } else {
+        setCurrentQuestion(null);
+      }
     }
-  }, [currentCard]);
+  }, [currentCard, studyMode]);
+
+  // Switch study mode and refetch cards
+  const switchStudyMode = async (mode) => {
+    if (mode === studyMode) return;
+
+    setStudyMode(mode);
+
+    // Refetch cards with or without quiz questions based on mode
+    if (mode === 'quiz') {
+      await fetchDueCards(20, true); // Include quiz questions
+    } else {
+      await fetchDueCards(20, false); // Don't include quiz questions
+    }
+
+    // Reset quiz states
+    setCurrentQuestion(null);
+    setQuizAnswer('');
+    setShowQuizAnswer(false);
+  };
+
+  // Handle quiz answer submission
+  const handleQuizAnswer = (answer) => {
+    setQuizAnswer(answer);
+    setShowQuizAnswer(true);
+  };
+
+  // Handle quiz next (after seeing answer)
+  const handleQuizNext = () => {
+    if (!showQuizAnswer) return;
+
+    const isCorrect = quizAnswer === currentQuestion?.correct_answer;
+
+    // Update study stats
+    setStudyStats(prev => ({
+      ...prev,
+      totalAnswers: prev.totalAnswers + 1,
+      correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0)
+    }));
+
+    // Rate based on quiz answer (correct = Easy, incorrect = Hard)
+    const rating = isCorrect ? 4 : 2; // 4 = Easy, 2 = Hard
+    handleCardRating(rating);
+  };
 
   // Keyboard shortcuts
   const handleKeyPress = useCallback((event) => {
@@ -97,16 +159,52 @@ const Study = () => {
 
     switch (event.code) {
       case 'Space':
-        setIsFlipped(!isFlipped);
+        if (studyMode === 'flashcard') {
+          setIsFlipped(!isFlipped);
+        }
         break;
       case 'Digit1':
-        handleCardRating(2);  // Map 1 to Hard (rating 2)
+        if (studyMode === 'flashcard') {
+          handleCardRating(2);  // Map 1 to Hard (rating 2)
+        } else if (studyMode === 'quiz' && currentQuestion && !showQuizAnswer) {
+          // Select first option in quiz
+          if (currentQuestion.options && currentQuestion.options.length > 0) {
+            handleQuizAnswer(currentQuestion.options[0]);
+          }
+        }
         break;
       case 'Digit2':
-        handleCardRating(3);  // Map 2 to Good (rating 3)
+        if (studyMode === 'flashcard') {
+          handleCardRating(3);  // Map 2 to Good (rating 3)
+        } else if (studyMode === 'quiz' && currentQuestion && !showQuizAnswer) {
+          // Select second option in quiz
+          if (currentQuestion.options && currentQuestion.options.length > 1) {
+            handleQuizAnswer(currentQuestion.options[1]);
+          }
+        }
         break;
       case 'Digit3':
-        handleCardRating(4);  // Map 3 to Easy (rating 4)
+        if (studyMode === 'flashcard') {
+          handleCardRating(4);  // Map 3 to Easy (rating 4)
+        } else if (studyMode === 'quiz' && currentQuestion && !showQuizAnswer) {
+          // Select third option in quiz
+          if (currentQuestion.options && currentQuestion.options.length > 2) {
+            handleQuizAnswer(currentQuestion.options[2]);
+          }
+        }
+        break;
+      case 'Digit4':
+        if (studyMode === 'quiz' && currentQuestion && !showQuizAnswer) {
+          // Select fourth option in quiz
+          if (currentQuestion.options && currentQuestion.options.length > 3) {
+            handleQuizAnswer(currentQuestion.options[3]);
+          }
+        }
+        break;
+      case 'Enter':
+        if (studyMode === 'quiz' && showQuizAnswer) {
+          handleQuizNext();
+        }
         break;
       case 'KeyS':
         handleSkipCard();
@@ -446,6 +544,31 @@ const Study = () => {
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 Study Session
               </h1>
+
+              {/* Mode Toggle */}
+              <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => switchStudyMode('flashcard')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    studyMode === 'flashcard'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
+                  }`}
+                >
+                  Flashcards
+                </button>
+                <button
+                  onClick={() => switchStudyMode('quiz')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    studyMode === 'quiz'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
+                  }`}
+                >
+                  Quiz
+                </button>
+              </div>
+
               <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-300">
                 <div className="flex items-center space-x-1">
                   <BookOpen className="h-4 w-4" />
@@ -502,18 +625,62 @@ const Study = () => {
 
           {/* Main Content */}
           <div className="space-y-6">
-            <FlashCard
-              card={currentCard}
-              isFlipped={isFlipped}
-              onFlip={() => setIsFlipped(!isFlipped)}
-              onRate={handleCardRating}
-              showRating={true}
-              isRatingInProgress={isRatingInProgress}
-            />
+            {studyMode === 'flashcard' ? (
+              <FlashCard
+                card={currentCard}
+                isFlipped={isFlipped}
+                onFlip={() => setIsFlipped(!isFlipped)}
+                onRate={handleCardRating}
+                showRating={true}
+                isRatingInProgress={isRatingInProgress}
+              />
+            ) : (
+              // Quiz Mode
+              currentQuestion ? (
+                <QuizQuestion
+                  question={currentQuestion}
+                  onAnswer={handleQuizAnswer}
+                  showAnswer={showQuizAnswer}
+                  onNext={handleQuizNext}
+                />
+              ) : currentCard ? (
+                <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
+                  <div className="text-yellow-600 dark:text-yellow-400 mb-4">
+                    <HelpCircle className="h-12 w-12 mx-auto" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    No Quiz Question Available
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                    This word doesn't have a quiz question yet. You can still study it with flashcards.
+                  </p>
+                  <div className="flex gap-4 justify-center">
+                    <button
+                      onClick={() => switchStudyMode('flashcard')}
+                      className="btn-primary"
+                    >
+                      Switch to Flashcards
+                    </button>
+                    <button
+                      onClick={() => handleCardRating(3)}
+                      className="btn-secondary"
+                    >
+                      Skip This Card
+                    </button>
+                  </div>
+                </div>
+              ) : null
+            )}
 
             {/* Help hint */}
             <div className="text-center text-gray-500 dark:text-gray-400 text-sm">
               Press <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">?</kbd> for keyboard shortcuts
+              {studyMode === 'quiz' && (
+                <span className="ml-4">
+                  • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1-4</kbd> to select options
+                  • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Enter</kbd> to submit
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -42,7 +42,7 @@ const QuizQuestions = () => {
 
   const loadWords = async () => {
     try {
-      const response = await wordsAPI.getWords({ limit: 1000 });
+      const response = await wordsAPI.getWords({ limit: 100 });
       const wordsMap = {};
       response.data.words?.forEach(word => {
         wordsMap[word.id] = word;

@@ -387,7 +387,7 @@ const Vocabulary = () => {
                 setShowContentForm(!showContentForm)
                 setShowAddForm(false)
               }}
-              className="btn-secondary"
+              className="btn-primary"
             >
               <Globe className="h-4 w-4 mr-2" />
               Add from Content

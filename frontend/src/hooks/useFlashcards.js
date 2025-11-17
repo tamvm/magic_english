@@ -11,12 +11,16 @@ export const useFlashcards = () => {
   const [error, setError] = useState(null);
 
   // Fetch cards due for review
-  const fetchDueCards = async (limit = 20) => {
+  const fetchDueCards = async (limit = 20, includeQuizQuestions = false) => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await flashcardAPI.getDueCards({ limit, includeNew: true });
+      const response = await flashcardAPI.getDueCards({
+        limit,
+        includeNew: true,
+        includeQuizQuestions
+      });
 
       setDueCards(response.data.cards);
 

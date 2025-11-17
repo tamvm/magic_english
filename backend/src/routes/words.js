@@ -34,7 +34,7 @@ const updateWordSchema = Joi.object({
 
 const searchSchema = Joi.object({
   q: Joi.string().min(1).max(100),
-  limit: Joi.number().integer().min(1).max(100).default(50),
+  limit: Joi.number().integer().min(1).max(1000).default(50),
   offset: Joi.number().integer().min(0).default(0),
   collection: Joi.string().uuid(),
   sortBy: Joi.string().valid('created_at', 'word', 'updated_at').default('created_at'),
