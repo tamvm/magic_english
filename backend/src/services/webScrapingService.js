@@ -1,6 +1,8 @@
 import puppeteer from 'puppeteer';
 import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
+import https from 'https';
+import http from 'http';
 
 class WebScrapingService {
   constructor() {
@@ -9,18 +11,36 @@ class WebScrapingService {
 
   async initBrowser() {
     if (!this.browser) {
-      this.browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu'
-        ]
-      });
+      try {
+        // Production configuration for containerized environments
+        const launchOptions = {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection'
+          ]
+        };
+
+        // In production environments, try to use the system Chrome first
+        if (process.env.NODE_ENV === 'production') {
+          launchOptions.executablePath = process.env.CHROME_BIN || '/usr/bin/google-chrome-stable';
+        }
+
+        this.browser = await puppeteer.launch(launchOptions);
+      } catch (error) {
+        console.error('Failed to launch browser:', error.message);
+        throw new Error('Browser initialization failed. Web scraping is not available.');
+      }
     }
     return this.browser;
   }
@@ -45,7 +65,12 @@ class WebScrapingService {
         throw new Error('Invalid URL protocol. Only HTTP and HTTPS are supported.');
       }
 
-      browser = await this.initBrowser();
+      try {
+        browser = await this.initBrowser();
+      } catch (browserError) {
+        console.error('Browser initialization failed, trying fallback method:', browserError.message);
+        return await this.fallbackScrape(url, timeout);
+      }
       page = await browser.newPage();
 
       // Set user agent to avoid bot detection
@@ -136,6 +161,92 @@ class WebScrapingService {
         error: error.message
       };
     }
+  }
+
+  async fallbackScrape(url, timeout) {
+    console.log(`Using fallback HTTP scraping for: ${url}`);
+
+    try {
+      const html = await this.fetchHtmlContent(url, timeout);
+      const content = this.extractMainContent(html, url);
+
+      console.log(`Fallback content extracted - Title: ${content.title}, Length: ${content.textContent?.length || 0} chars`);
+
+      if (!content.textContent || content.textContent.length < 100) {
+        throw new Error(`Insufficient content extracted: only ${content.textContent?.length || 0} characters found`);
+      }
+
+      return {
+        success: true,
+        url,
+        title: content.title,
+        content: content.textContent,
+        excerpt: content.excerpt,
+        error: null
+      };
+
+    } catch (error) {
+      console.error('Fallback scraping failed:', error);
+      return {
+        success: false,
+        url,
+        title: null,
+        content: null,
+        excerpt: null,
+        error: `Web scraping failed: ${error.message}. Note: Advanced scraping features are unavailable due to missing browser dependencies.`
+      };
+    }
+  }
+
+  async fetchHtmlContent(url, timeout) {
+    return new Promise((resolve, reject) => {
+      const urlObj = new URL(url);
+      const client = urlObj.protocol === 'https:' ? https : http;
+
+      const options = {
+        hostname: urlObj.hostname,
+        port: urlObj.port,
+        path: urlObj.pathname + urlObj.search,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+        },
+        timeout: timeout || 30000
+      };
+
+      const req = client.request(options, (res) => {
+        let data = '';
+
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(data);
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+
+      req.end();
+    });
   }
 
   extractMainContent(html, url) {
