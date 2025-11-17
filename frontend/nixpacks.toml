@@ -8,7 +8,7 @@ nixPkgs = ["nodejs_20", "npm"]
 cmds = ["npm install --production=false"]
 
 [phases.build]
-cmds = ["npm run build", "ls -la dist"]
+cmds = ["npm run build --workspace=magic-english-frontend", "ls -la frontend/dist", "cp -r frontend/dist ./"]
 
 [start]
-cmd = "npx serve -s dist -p $PORT --single"
+cmd = "npx serve -s frontend/dist -p $PORT --single"
