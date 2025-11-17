@@ -129,4 +129,30 @@ export const profileAPI = {
     api.put('/profile/cefr-level', { cefrLevel }),
 }
 
+export const flashcardAPI = {
+  getDueCards: (params = {}) =>
+    api.get('/flashcards/due', { params }),
+
+  getStats: () =>
+    api.get('/flashcards/stats'),
+
+  getProgress: (days = 30) =>
+    api.get('/flashcards/progress', { params: { days } }),
+
+  startSession: () =>
+    api.post('/flashcards/session/start'),
+
+  endSession: (sessionId, sessionData) =>
+    api.put(`/flashcards/session/${sessionId}/end`, sessionData),
+
+  reviewCard: (cardId, data) =>
+    api.post(`/flashcards/${cardId}/review`, data),
+
+  getQuizQuestions: (cardId, params = {}) =>
+    api.get(`/flashcards/${cardId}/quiz`, { params }),
+
+  submitQuizAnswer: (questionId, data) =>
+    api.post(`/flashcards/quiz/${questionId}/answer`, data),
+}
+
 export default api

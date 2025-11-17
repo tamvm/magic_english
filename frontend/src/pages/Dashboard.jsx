@@ -6,11 +6,13 @@ import {
   TrendingUp,
   Calendar,
   Target,
-  Award
+  Award,
+  BrainCircuit
 } from 'lucide-react'
 import { profileAPI } from '@/lib/api'
 import LoadingSpinner from '@/components/UI/LoadingSpinner'
 import { formatNumber, getStreakEmoji } from '@/lib/utils'
+import StudyCard from '@/components/Dashboard/StudyCard'
 
 const Dashboard = () => {
   const [profile, setProfile] = useState(null)
@@ -133,6 +135,9 @@ const Dashboard = () => {
           ))}
         </div>
 
+        {/* Study Section */}
+        <StudyCard />
+
         {/* Progress Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Daily Progress */}
@@ -239,7 +244,7 @@ const Dashboard = () => {
             </h3>
           </div>
           <div className="card-body">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <a
                 href="/vocabulary"
                 className="flex items-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
@@ -266,6 +271,21 @@ const Dashboard = () => {
                   </p>
                   <p className="text-sm text-green-600 dark:text-green-300">
                     Practice writing
+                  </p>
+                </div>
+              </a>
+
+              <a
+                href="/study"
+                className="flex items-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
+              >
+                <BrainCircuit className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-4" />
+                <div>
+                  <p className="font-medium text-indigo-900 dark:text-indigo-100">
+                    Study Flashcards
+                  </p>
+                  <p className="text-sm text-indigo-600 dark:text-indigo-300">
+                    Review and learn
                   </p>
                 </div>
               </a>

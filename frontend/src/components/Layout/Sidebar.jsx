@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   BookOpen,
+  BrainCircuit,
   PenTool,
   User,
   Settings,
@@ -19,6 +20,11 @@ const navigation = [
     name: 'Vocabulary',
     href: '/vocabulary',
     icon: BookOpen,
+  },
+  {
+    name: 'Study Cards',
+    href: '/study',
+    icon: BrainCircuit,
   },
   {
     name: 'Sentence Scoring',
