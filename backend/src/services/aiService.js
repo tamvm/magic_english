@@ -182,6 +182,8 @@ Provide only valid JSON array without additional text. Focus on words that are c
         ],
         temperature: 0.3,
         max_tokens: 4000,
+      }, {
+        timeout: 120000, // 2 minutes timeout for website analysis
       });
 
       if (response.choices && response.choices[0]) {
@@ -410,7 +412,7 @@ Provide only valid JSON without additional text.`;
     }
   }
 
-  async makeRequest(endpoint, data) {
+  async makeRequest(endpoint, data, options = {}) {
     const provider = this.providers[this.config.provider];
     if (!provider) {
       throw new Error(`Unknown AI provider: ${this.config.provider}`);
@@ -429,11 +431,14 @@ Provide only valid JSON without additional text.`;
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
 
+    // Use extended timeout for complex operations like website analysis
+    const timeout = options.timeout || 30000;
+
     const response = await this.httpRequest(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(data),
-      timeout: 30000,
+      timeout,
     });
 
     if (!response.ok) {
