@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   BookOpen,
-  Clock,
   Flame,
   BarChart3,
   Trophy,
@@ -23,17 +22,6 @@ const StudyStats = ({ stats, className = '' }) => {
     );
   }
 
-  const formatTime = (seconds) => {
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    if (minutes < 60) {
-      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-    }
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}m`;
-  };
 
   const getStreakColor = (streak) => {
     if (streak >= 30) return 'text-purple-600';
@@ -59,14 +47,6 @@ const StudyStats = ({ stats, className = '' }) => {
       icon: BookOpen,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    },
-    {
-      title: 'Study Time',
-      value: formatTime(stats.userStats?.total_study_time || 0),
-      unit: '',
-      icon: Clock,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50 dark:bg-green-900/20',
     },
     {
       title: 'Words Mastered',

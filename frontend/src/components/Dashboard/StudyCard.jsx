@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   BookOpen,
   Flame,
-  Clock,
   ArrowRight,
   BarChart3,
 } from 'lucide-react';
@@ -50,18 +49,8 @@ const StudyCard = ({ className = '' }) => {
   const userStats = stats.userStats || {};
   const dueToday = stats.dueToday || 0;
   const currentStreak = userStats.current_streak || 0;
-  const totalStudyTime = userStats.total_study_time || 0;
   const wordsM = userStats.words_mastered || 0;
 
-  // Format study time
-  const formatStudyTime = (seconds) => {
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}m`;
-  };
 
   const getStreakColor = (streak) => {
     if (streak >= 30) return 'text-purple-600';
@@ -121,20 +110,6 @@ const StudyCard = ({ className = '' }) => {
             </div>
           </div>
 
-          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-green-600 dark:text-green-400 font-medium">
-                  Study Time
-                </p>
-                <p className="text-2xl font-bold text-green-600">
-                  {formatStudyTime(totalStudyTime)}
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400">total</p>
-              </div>
-              <Clock className="h-8 w-8 text-green-500" />
-            </div>
-          </div>
 
           <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
             <div className="flex items-center justify-between">
