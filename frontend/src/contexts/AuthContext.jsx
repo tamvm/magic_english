@@ -47,42 +47,18 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const signUp = async (email, password, fullName) => {
+  const signInWithGoogle = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
         options: {
-          data: {
-            full_name: fullName,
-          },
-        },
+          redirectTo: `${window.location.origin}/dashboard`
+        }
       })
 
       if (error) throw error
 
-      toast.success('Account created! Please check your email for verification.')
-      return { data, error: null }
-    } catch (error) {
-      toast.error(error.message)
-      return { data: null, error }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const signIn = async (email, password) => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) throw error
-
-      toast.success('Welcome back!')
       return { data, error: null }
     } catch (error) {
       toast.error(error.message)
@@ -109,37 +85,6 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const resetPassword = async (email) => {
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      })
-
-      if (error) throw error
-
-      toast.success('Password reset email sent!')
-      return { error: null }
-    } catch (error) {
-      toast.error(error.message)
-      return { error }
-    }
-  }
-
-  const updatePassword = async (password) => {
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password,
-      })
-
-      if (error) throw error
-
-      toast.success('Password updated successfully!')
-      return { error: null }
-    } catch (error) {
-      toast.error(error.message)
-      return { error }
-    }
-  }
 
   const updateProfile = async (updates) => {
     try {
@@ -172,11 +117,8 @@ export function AuthProvider({ children }) {
     user,
     session,
     loading,
-    signUp,
-    signIn,
+    signInWithGoogle,
     signOut,
-    resetPassword,
-    updatePassword,
     updateProfile,
     getAccessToken,
     supabase,
