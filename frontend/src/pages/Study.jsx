@@ -332,12 +332,16 @@ const Study = () => {
     const startTime = cardStartTime || Date.now();
     const responseTime = Date.now() - startTime;
 
+    // Store current card data before it changes (due to instant switching)
+    const cardToReview = { ...currentCard };
+
     try {
-      await reviewCard(currentCard.id, rating, responseTime);
+      // This now switches to next card instantly
+      await reviewCard(cardToReview.id, rating, responseTime);
 
       // Track this card for review if it was hard (rating <= 2) or if user wants to review
       const reviewedCard = {
-        ...currentCard,
+        ...cardToReview,
         userRating: rating,
         wasHard: rating <= 2,
         reviewedAt: new Date().toISOString(),
@@ -353,8 +357,8 @@ const Study = () => {
         cardsStudied: newCardsStudied,
         totalAnswers: prev.totalAnswers + 1,
         correctAnswers: prev.correctAnswers + (rating >= 3 ? 1 : 0),
-        newCards: prev.newCards + (currentCard.state === 'new' ? 1 : 0),
-        reviewCards: prev.reviewCards + (currentCard.state !== 'new' ? 1 : 0),
+        newCards: prev.newCards + (cardToReview.state === 'new' ? 1 : 0),
+        reviewCards: prev.reviewCards + (cardToReview.state !== 'new' ? 1 : 0),
       }));
 
       // Show review page after 10 cards
@@ -363,7 +367,7 @@ const Study = () => {
         return; // Don't continue to next card, show review first
       }
 
-      // Reset for next card
+      // Reset for next card (this happens instantly now)
       setIsFlipped(false);
       setCardStartTime(null);
 

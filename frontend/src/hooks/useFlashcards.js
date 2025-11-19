@@ -11,6 +11,36 @@ export const useFlashcards = () => {
   const [error, setError] = useState(null);
   const [includeQuizQuestions, setIncludeQuizQuestions] = useState(false);
 
+  // Pre-loading state
+  const [nextCard, setNextCard] = useState(null);
+  const [isPreloading, setIsPreloading] = useState(false);
+
+  // Fetch more cards when needed (for pre-loading)
+  const fetchMoreCards = async () => {
+    if (isPreloading) return; // Prevent concurrent fetches
+
+    try {
+      setIsPreloading(true);
+      const response = await flashcardAPI.getDueCards({
+        limit: 10, // Fetch smaller batch for pre-loading
+        includeNew: true,
+        includeQuizQuestions: includeQuizQuestions
+      });
+
+      if (response.data.cards.length > 0) {
+        // Add new cards to the end of current dueCards
+        setDueCards(prev => [...prev, ...response.data.cards]);
+        return response.data.cards;
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch more cards:', error);
+      return [];
+    } finally {
+      setIsPreloading(false);
+    }
+  };
+
   // Fetch cards due for review
   const fetchDueCards = async (limit = 20, includeQuizQuestionsParam = null) => {
     try {
@@ -38,6 +68,8 @@ export const useFlashcards = () => {
       if (response.data.cards.length > 0) {
         setCurrentCard(response.data.cards[0]);
         setCurrentCardIndex(0);
+        // Pre-load next card
+        setNextCard(response.data.cards.length > 1 ? response.data.cards[1] : null);
       }
 
       return response.data;
@@ -93,27 +125,52 @@ export const useFlashcards = () => {
     }
   };
 
-  // Review a card with rating
+  // Review a card with rating (with instant next card switching)
   const reviewCard = async (cardId, rating, responseTime = null) => {
     try {
       setError(null);
 
-      const response = await flashcardAPI.reviewCard(cardId, {
-        rating,
-        responseTime
-      });
-
-      // Move to next card
+      // INSTANT: Move to next card immediately before API call
       const nextIndex = currentCardIndex + 1;
-      if (nextIndex < dueCards.length) {
+
+      if (nextCard) {
+        // Use pre-loaded next card for instant switching
+        setCurrentCard(nextCard);
+        setCurrentCardIndex(nextIndex);
+
+        // Pre-load the card after next
+        const cardAfterNext = nextIndex + 1 < dueCards.length ? dueCards[nextIndex + 1] : null;
+        setNextCard(cardAfterNext);
+
+        // If we're near the end of cards, fetch more in background
+        if (nextIndex + 2 >= dueCards.length) {
+          fetchMoreCards().then(newCards => {
+            if (newCards.length > 0 && !cardAfterNext) {
+              setNextCard(newCards[0]);
+            }
+          });
+        }
+      } else if (nextIndex < dueCards.length) {
+        // Fallback: use cards from dueCards array
         setCurrentCard(dueCards[nextIndex]);
         setCurrentCardIndex(nextIndex);
+        setNextCard(nextIndex + 1 < dueCards.length ? dueCards[nextIndex + 1] : null);
       } else {
-        // No more cards, fetch new due cards with same quiz mode
+        // No more cards available, fetch new ones
         await fetchDueCards();
       }
 
-      return response.data;
+      // BACKGROUND: Submit rating to API (don't wait for response)
+      flashcardAPI.reviewCard(cardId, {
+        rating,
+        responseTime
+      }).catch(err => {
+        console.error('Failed to review card (background):', err);
+        // Could show a notification here that the rating wasn't saved
+        // but don't block the user experience
+      });
+
+      return true; // Return immediately for instant feedback
     } catch (err) {
       console.error('Failed to review card:', err);
       setError(err.message);
@@ -121,18 +178,38 @@ export const useFlashcards = () => {
     }
   };
 
-  // Skip a card without rating it
+  // Skip a card without rating it (with instant next card switching)
   const skipCard = () => {
     try {
       setError(null);
 
-      // Move to next card without API call
+      // INSTANT: Move to next card immediately
       const nextIndex = currentCardIndex + 1;
-      if (nextIndex < dueCards.length) {
+
+      if (nextCard) {
+        // Use pre-loaded next card for instant switching
+        setCurrentCard(nextCard);
+        setCurrentCardIndex(nextIndex);
+
+        // Pre-load the card after next
+        const cardAfterNext = nextIndex + 1 < dueCards.length ? dueCards[nextIndex + 1] : null;
+        setNextCard(cardAfterNext);
+
+        // If we're near the end of cards, fetch more in background
+        if (nextIndex + 2 >= dueCards.length) {
+          fetchMoreCards().then(newCards => {
+            if (newCards.length > 0 && !cardAfterNext) {
+              setNextCard(newCards[0]);
+            }
+          });
+        }
+      } else if (nextIndex < dueCards.length) {
+        // Fallback: use cards from dueCards array
         setCurrentCard(dueCards[nextIndex]);
         setCurrentCardIndex(nextIndex);
+        setNextCard(nextIndex + 1 < dueCards.length ? dueCards[nextIndex + 1] : null);
       } else {
-        // No more cards, fetch new due cards with same quiz mode
+        // No more cards available, fetch new ones
         fetchDueCards();
       }
 
@@ -225,6 +302,8 @@ export const useFlashcards = () => {
     currentSession,
     loading,
     error,
+    nextCard,
+    isPreloading,
     fetchDueCards,
     startSession,
     endSession,
@@ -234,6 +313,7 @@ export const useFlashcards = () => {
     submitQuizAnswer,
     getStats,
     getProgress,
+    fetchMoreCards,
     // Helper computed values
     hasCards: dueCards.length > 0,
     progress: dueCards.length > 0 ? ((currentCardIndex + 1) / dueCards.length) * 100 : 0,
