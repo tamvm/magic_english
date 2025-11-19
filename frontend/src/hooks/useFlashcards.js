@@ -159,7 +159,7 @@ export const useFlashcards = () => {
     }
   };
 
-  // Submit quiz answer
+  // Submit quiz answer with spaced repetition
   const submitQuizAnswer = async (questionId, userAnswer, responseTime, cardId) => {
     try {
       setError(null);

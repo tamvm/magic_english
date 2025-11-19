@@ -28,7 +28,7 @@ const navigation = [
     icon: HelpCircle,
   },
   {
-    name: 'Study Cards',
+    name: 'Study',
     href: '/study',
     icon: BrainCircuit,
   },

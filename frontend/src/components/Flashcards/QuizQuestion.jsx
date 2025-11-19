@@ -9,10 +9,19 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Reset selected answer when question changes or when showAnswer becomes false
+  // Reset selected answer only when question changes or when starting a new question (showAnswer becomes false)
   useEffect(() => {
     setSelectedAnswer('');
-  }, [question, showAnswer]);
+    setIsProcessing(false);
+  }, [question]);
+
+  // Reset when showAnswer becomes false (new question starts)
+  useEffect(() => {
+    if (!showAnswer) {
+      setSelectedAnswer('');
+      setIsProcessing(false);
+    }
+  }, [showAnswer]);
 
   if (!question) {
     return (
@@ -150,23 +159,37 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
       {showAnswer && (
         <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
           {/* Result */}
-          <div className={`flex items-center space-x-2 mb-4 p-3 rounded-lg ${
+          <div className={`mb-4 p-4 rounded-lg ${
             isCorrect
               ? 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400'
               : 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-400'
           }`}>
-            {isCorrect ? (
-              <CheckCircle className="h-5 w-5" />
-            ) : (
-              <XCircle className="h-5 w-5" />
-            )}
-            <span className="font-semibold">
-              {isCorrect ? 'Correct!' : 'Incorrect'}
-            </span>
-            {!isCorrect && (
-              <span>
-                The correct answer is: <strong>{question.correct_answer}</strong>
+            <div className="flex items-center space-x-2 mb-2">
+              {isCorrect ? (
+                <CheckCircle className="h-5 w-5" />
+              ) : (
+                <XCircle className="h-5 w-5" />
+              )}
+              <span className="font-semibold">
+                {isCorrect ? 'Correct!' : 'Incorrect'}
               </span>
+            </div>
+
+            {!isCorrect && (
+              <div className="space-y-1 text-sm">
+                <div>
+                  <span className="font-medium">Your answer:</span> <span className="bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">{selectedAnswer}</span>
+                </div>
+                <div>
+                  <span className="font-medium">Correct answer:</span> <span className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded font-semibold">{question.correct_answer}</span>
+                </div>
+              </div>
+            )}
+
+            {isCorrect && (
+              <div className="text-sm">
+                <span className="font-medium">Your answer:</span> <span className="bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded font-semibold">{selectedAnswer}</span>
+              </div>
             )}
           </div>
 

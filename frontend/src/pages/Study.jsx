@@ -82,40 +82,42 @@ const Study = () => {
     // Remove cleanup - let user explicitly end session
   }, []);
 
-  // Set card start time when new card appears
+  // Set card start time when new card appears or question changes
   useEffect(() => {
-    if (currentCard) {
+    if (currentCard && studyMode === 'flashcard') {
       setCardStartTime(Date.now());
       setIsFlipped(false);
       setIsRatingInProgress(false);
-
-      // Set up quiz question if in quiz mode
-      if (studyMode === 'quiz' && currentCard.quiz_questions && currentCard.quiz_questions.length > 0) {
-        // Pick a random quiz question for this card
-        const randomQuestion = currentCard.quiz_questions[Math.floor(Math.random() * currentCard.quiz_questions.length)];
-        setCurrentQuestion(randomQuestion);
-        setShowQuizAnswer(false);
-        setQuizAnswer('');
-      } else {
-        setCurrentQuestion(null);
-      }
     }
   }, [currentCard, studyMode]);
 
-  // Fetch all quiz questions for quiz mode
+  // Set timer for quiz questions
+  useEffect(() => {
+    if (studyMode === 'quiz' && currentQuestion) {
+      setCardStartTime(Date.now());
+      setShowQuizAnswer(false);
+      setQuizAnswer('');
+      setIsRatingInProgress(false);
+    }
+  }, [currentQuestion, studyMode]);
+
+  // Fetch all quiz questions for quiz mode with spaced repetition
   const fetchAllQuizQuestions = async () => {
     try {
       setLoadingQuizQuestions(true);
-      const response = await flashcardAPI.getAllQuizQuestions({ limit: 100 });
+      console.log('Fetching quiz questions...');
+      const response = await flashcardAPI.getAllQuizQuestions({ limit: 100, includeNew: true });
+      console.log('Quiz questions response:', response.data);
 
       if (response.data.questions && response.data.questions.length > 0) {
-        // Shuffle the questions for variety
-        const shuffled = response.data.questions.sort(() => Math.random() - 0.5);
-        setAllQuizQuestions(shuffled);
-        setCurrentQuestion(shuffled[0]);
+        // Questions are already sorted by priority (wrong answers first, then by due date)
+        console.log('Found', response.data.questions.length, 'quiz questions');
+        setAllQuizQuestions(response.data.questions);
+        setCurrentQuestion(response.data.questions[0]);
         setCurrentQuestionIndex(0);
         return true;
       } else {
+        console.log('No quiz questions found');
         setAllQuizQuestions([]);
         setCurrentQuestion(null);
         return false;
@@ -158,34 +160,81 @@ const Study = () => {
   };
 
   // Handle quiz next (after seeing answer)
-  const handleQuizNext = () => {
-    if (!showQuizAnswer || isRatingInProgress) return;
+  const handleQuizNext = async () => {
+    if (!showQuizAnswer || isRatingInProgress || !currentQuestion) return;
+
+    setIsRatingInProgress(true);
 
     const isCorrect = quizAnswer === currentQuestion?.correct_answer;
 
-    // Update study stats
-    setStudyStats(prev => ({
-      ...prev,
-      totalAnswers: prev.totalAnswers + 1,
-      correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0),
-      cardsStudied: prev.cardsStudied + 1
-    }));
+    try {
+      // Submit the quiz answer with spaced repetition
+      const responseTime = cardStartTime ? Date.now() - cardStartTime : 1000;
+      console.log('Submitting quiz answer:', {
+        questionId: currentQuestion.id,
+        userAnswer: quizAnswer,
+        responseTime: responseTime,
+        isCorrect: isCorrect
+      });
 
-    // Move to next quiz question
-    const nextIndex = currentQuestionIndex + 1;
-    if (nextIndex < allQuizQuestions.length) {
-      setCurrentQuestionIndex(nextIndex);
-      setCurrentQuestion(allQuizQuestions[nextIndex]);
-      setQuizAnswer('');
-      setShowQuizAnswer(false);
-    } else {
-      // No more questions, shuffle and start over
-      const shuffled = allQuizQuestions.sort(() => Math.random() - 0.5);
-      setAllQuizQuestions(shuffled);
-      setCurrentQuestionIndex(0);
-      setCurrentQuestion(shuffled[0]);
-      setQuizAnswer('');
-      setShowQuizAnswer(false);
+      const result = await flashcardAPI.submitQuizAnswer(currentQuestion.id, {
+        userAnswer: quizAnswer,
+        responseTime: responseTime,
+        cardId: null // No specific flashcard associated
+      });
+
+      console.log('Quiz answer submitted successfully:', result);
+
+      // Update study stats
+      setStudyStats(prev => ({
+        ...prev,
+        totalAnswers: prev.totalAnswers + 1,
+        correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0),
+        cardsStudied: prev.cardsStudied + 1
+      }));
+
+      // If answer was wrong, we'll see this question again soon due to spaced repetition
+      // If answer was correct, the question will be scheduled for later review
+
+      // Move to next quiz question
+      const nextIndex = currentQuestionIndex + 1;
+      if (nextIndex < allQuizQuestions.length) {
+        setCurrentQuestionIndex(nextIndex);
+        setCurrentQuestion(allQuizQuestions[nextIndex]);
+        setQuizAnswer('');
+        setShowQuizAnswer(false);
+        setCardStartTime(Date.now()); // Reset timer for next question
+      } else {
+        // No more questions, fetch fresh questions (this will include any wrong answers due soon)
+        await fetchAllQuizQuestions();
+      }
+
+    } catch (error) {
+      console.error('Failed to submit quiz answer:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data
+      });
+
+      // Show user notification about submission failure (only for certain types of errors)
+      if (error.message.includes('Network Error') || error.message.includes('timeout')) {
+        alert(`Warning: Your answer was not saved due to a connection error. Please check your internet connection and try again.\n\nError: ${error.message}`);
+      }
+
+      // Continue to next question even if submission failed
+      const nextIndex = currentQuestionIndex + 1;
+      if (nextIndex < allQuizQuestions.length) {
+        setCurrentQuestionIndex(nextIndex);
+        setCurrentQuestion(allQuizQuestions[nextIndex]);
+        setQuizAnswer('');
+        setShowQuizAnswer(false);
+        setCardStartTime(Date.now());
+      } else {
+        await fetchAllQuizQuestions();
+      }
+    } finally {
+      setIsRatingInProgress(false);
     }
   };
 
@@ -607,17 +656,30 @@ const Study = () => {
               <div className="text-center">
                 <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                  No Cards Due
+                  {studyMode === 'quiz' ? 'No Quiz Questions Available' : 'No Cards Due'}
                 </h2>
                 <p className="text-gray-600 dark:text-gray-300 mb-4">
-                  Great job! You've completed all your reviews for today.
+                  {studyMode === 'quiz'
+                    ? 'No quiz questions found. Try adding more words to your vocabulary or generate quiz questions for your existing words.'
+                    : 'Great job! You\'ve completed all your reviews for today.'
+                  }
                 </p>
-                <button
-                  onClick={() => navigate('/dashboard')}
-                  className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Back to Dashboard
-                </button>
+                <div className="flex gap-4 justify-center">
+                  {studyMode === 'quiz' && (
+                    <button
+                      onClick={() => switchStudyMode('flashcard')}
+                      className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      Switch to Flashcards
+                    </button>
+                  )}
+                  <button
+                    onClick={() => navigate('/dashboard')}
+                    className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700 transition-colors"
+                  >
+                    Back to Dashboard
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -435,7 +435,7 @@ router.get('/:cardId/quiz', async (req, res) => {
 
 /**
  * POST /api/flashcards/quiz/:questionId/answer
- * Submit an answer to a quiz question
+ * Submit an answer to a quiz question with simplified spaced repetition
  */
 router.post('/quiz/:questionId/answer', async (req, res) => {
   try {
@@ -457,12 +457,45 @@ router.post('/quiz/:questionId/answer', async (req, res) => {
     // Check if answer is correct
     const isCorrect = userAnswer.trim().toLowerCase() === question.correct_answer.trim().toLowerCase();
 
+    // Find the card associated with this question's word
+    let actualCardId = cardId;
+    if (!cardId) {
+      const { data: card, error: cardError } = await req.supabase
+        .from('cards')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('word_id', question.word_id)
+        .single();
+
+      if (!cardError && card) {
+        actualCardId = card.id;
+      } else {
+        console.error('Could not find card for quiz question:', { questionId, wordId: question.word_id, cardError });
+        // Create a card for this word if it doesn't exist
+        const { data: newCard, error: createCardError } = await req.supabase
+          .from('cards')
+          .insert({
+            user_id: userId,
+            word_id: question.word_id
+          })
+          .select('id')
+          .single();
+
+        if (!createCardError && newCard) {
+          actualCardId = newCard.id;
+        } else {
+          console.error('Failed to create card for quiz question:', createCardError);
+          return res.status(500).json({ error: 'Failed to associate quiz attempt with card' });
+        }
+      }
+    }
+
     // Record the attempt
     const { error: attemptError } = await req.supabase
       .from('quiz_attempts')
       .insert({
         user_id: userId,
-        card_id: cardId,
+        card_id: actualCardId,
         question_id: questionId,
         user_answer: userAnswer,
         is_correct: isCorrect,
@@ -492,7 +525,12 @@ router.post('/quiz/:questionId/answer', async (req, res) => {
       isCorrect,
       correctAnswer: question.correct_answer,
       explanation: question.explanation,
-      userAnswer
+      userAnswer,
+      spaced_repetition: {
+        // Simplified spaced repetition info
+        will_repeat_soon: !isCorrect,
+        priority: isCorrect ? 'low' : 'high'
+      }
     });
   } catch (error) {
     console.error('Error in /quiz/answer endpoint:', error);
@@ -678,14 +716,19 @@ async function updateUserStatistics(supabase, userId, rating, responseTime) {
 
 /**
  * GET /api/flashcards/quiz-questions
- * Get all quiz questions for the user's words
+ * Get quiz questions due for review with spaced repetition
  */
 router.get('/quiz-questions', async (req, res) => {
   try {
     const userId = req.user.id;
-    const { limit = 1000 } = req.query;
+    const { limit = 100, includeNew = true } = req.query;
 
-    const { data: questions, error } = await req.supabase
+    console.log(`Fetching quiz questions for user ${userId}, limit: ${limit}, includeNew: ${includeNew}`);
+
+    const now = new Date().toISOString();
+
+    // Get quiz questions with their latest attempt status
+    const { data: questionsWithAttempts, error: questionsError } = await req.supabase
       .from('quiz_questions')
       .select(`
         *,
@@ -700,18 +743,129 @@ router.get('/quiz-questions', async (req, res) => {
           synonyms
         )
       `)
-      .eq('words.user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(parseInt(limit));
+      .eq('words.user_id', userId);
 
-    if (error) {
-      console.error('Error fetching quiz questions:', error);
+    if (questionsError) {
+      console.error('Error fetching quiz questions with cards:', questionsError);
       return res.status(500).json({ error: 'Failed to fetch quiz questions' });
     }
 
+    console.log(`Found ${questionsWithAttempts?.length || 0} quiz questions`);
+    if (questionsWithAttempts?.length > 0) {
+      console.log('Sample question:', {
+        id: questionsWithAttempts[0].id,
+        question_text: questionsWithAttempts[0].question_text,
+        word: questionsWithAttempts[0].words?.word
+      });
+    }
+
+    // Get recent quiz attempts for these questions to implement simplified spaced repetition
+    let questionsWithRecentAttempts = [];
+
+    if (questionsWithAttempts && questionsWithAttempts.length > 0) {
+      const questionIds = questionsWithAttempts.map(q => q.id);
+
+      // Get the most recent attempt for each question by this user
+      const { data: recentAttempts, error: attemptsError } = await req.supabase
+        .from('quiz_attempts')
+        .select('question_id, is_correct, created_at')
+        .eq('user_id', userId)
+        .in('question_id', questionIds)
+        .order('created_at', { ascending: false });
+
+      if (attemptsError) {
+        console.error('Error fetching quiz attempts:', attemptsError);
+      }
+
+      // Group attempts by question_id (most recent first due to ordering)
+      const attemptsByQuestion = {};
+      recentAttempts?.forEach(attempt => {
+        if (!attemptsByQuestion[attempt.question_id]) {
+          attemptsByQuestion[attempt.question_id] = attempt;
+        }
+      });
+
+      // Filter and prioritize questions based on attempts
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      for (const question of questionsWithAttempts) {
+        const lastAttempt = attemptsByQuestion[question.id];
+
+        if (!lastAttempt) {
+          // New question - include if includeNew is true
+          if (includeNew === 'true' || includeNew === true) {
+            questionsWithRecentAttempts.push({
+              ...question,
+              is_new: true,
+              priority: 3, // Medium priority for new questions
+              last_attempt: null
+            });
+          }
+        } else {
+          // Question has been attempted before
+          const attemptDate = new Date(lastAttempt.created_at);
+
+          if (!lastAttempt.is_correct) {
+            // Wrong answer - high priority, always include
+            questionsWithRecentAttempts.push({
+              ...question,
+              is_new: false,
+              priority: 1, // Highest priority for wrong answers
+              last_attempt: lastAttempt
+            });
+          } else {
+            // Correct answer - include based on time passed
+            if (attemptDate < oneDayAgo) {
+              questionsWithRecentAttempts.push({
+                ...question,
+                is_new: false,
+                priority: 5, // Lower priority for old correct answers
+                last_attempt: lastAttempt
+              });
+            }
+            // Skip recent correct answers (spaced repetition)
+          }
+        }
+      }
+    }
+
+    // Sort by priority (lower number = higher priority)
+    questionsWithRecentAttempts.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      // Same priority - sort by last attempt date (older first)
+      if (a.last_attempt && b.last_attempt) {
+        return new Date(a.last_attempt.created_at) - new Date(b.last_attempt.created_at);
+      }
+      return 0;
+    });
+
+    let dueQuestions = questionsWithRecentAttempts;
+
+    console.log(`After filtering: ${dueQuestions.length} due questions`);
+
+    // Limit results
+    const limitedQuestions = dueQuestions.slice(0, parseInt(limit));
+
+    // Shuffle options for questions
+    const questionsWithShuffledOptions = limitedQuestions.map(q => {
+      if (q.options && Array.isArray(q.options)) {
+        return {
+          ...q,
+          options: quizService.shuffleArray(q.options)
+        };
+      }
+      return q;
+    });
+
+    console.log(`Returning ${questionsWithShuffledOptions.length} quiz questions`);
+
     res.json({
-      questions: questions || [],
-      total: questions?.length || 0
+      questions: questionsWithShuffledOptions,
+      total: dueQuestions.length,
+      returned: questionsWithShuffledOptions.length
     });
 
   } catch (error) {
