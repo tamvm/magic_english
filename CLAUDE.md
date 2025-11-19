@@ -34,3 +34,7 @@ Magic English is an AI-powered vocabulary learning web application built with:
 - CORS properly configured
 - Supabase handles authentication and authorization
 - No API keys or secrets stored in frontend code
+
+## Development Guidelines
+
+- Use context7 mcp as much as possible for enhanced functionality and capabilities

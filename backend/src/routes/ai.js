@@ -1,9 +1,27 @@
 import express from 'express';
 import Joi from 'joi';
+import multer from 'multer';
 import { aiService } from '../services/aiService.js';
 import { webScrapingService } from '../services/webScrapingService.js';
+import { fileProcessingService } from '../services/fileProcessingService.js';
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Check if file type is valid
+    if (fileProcessingService.isValidFileType(file)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only TXT, PDF, and DOCX files are allowed.'), false);
+    }
+  },
+});
 
 // Validation schemas
 const analyzeWordSchema = Joi.object({
@@ -25,7 +43,7 @@ const analyzeContentSchema = Joi.object({
   url: Joi.string().uri().optional(),
   text: Joi.string().min(1).max(20000).optional(),
   limit: Joi.number().integer().min(1).max(20).default(20),
-}).or('url', 'text');
+});
 
 // Analyze word with AI
 router.post('/analyze-word', async (req, res, next) => {
@@ -130,16 +148,30 @@ router.post('/analyze-sentence', async (req, res, next) => {
   }
 });
 
-// Analyze website or text content for vocabulary
-router.post('/analyze-content', async (req, res, next) => {
+// Analyze website, text, or file content for vocabulary
+router.post('/analyze-content', upload.single('file'), async (req, res, next) => {
   try {
-    const { error, value } = analyzeContentSchema.validate(req.body);
-    if (error) {
-      error.isJoi = true;
-      return next(error);
+    console.log('📁 File upload request received');
+    console.log('📄 Request body:', req.body);
+    console.log('📎 Uploaded file:', req.file ? {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : 'No file uploaded');
+
+    // For validation, we skip validation if we have a file upload
+    let validatedBody = req.body;
+    if (!req.file) {
+      const { error, value } = analyzeContentSchema.validate(req.body);
+      if (error) {
+        error.isJoi = true;
+        return next(error);
+      }
+      validatedBody = value;
     }
 
-    const { url, text, limit } = value;
+    const { url, text, limit } = validatedBody;
+    const uploadedFile = req.file;
 
     // Get user's CEFR level from profile
     let userCefrLevel = 'B2'; // Default
@@ -161,7 +193,38 @@ router.post('/analyze-content', async (req, res, next) => {
     let sourceType;
     let sourceInfo = {};
 
-    if (url) {
+    if (uploadedFile) {
+      // Process uploaded file
+      try {
+        console.log('🔄 Processing file:', uploadedFile.originalname);
+        const fileResult = await fileProcessingService.processFile(uploadedFile);
+        console.log('✅ File processed successfully');
+        console.log('📊 File stats:', {
+          title: fileResult.title,
+          wordCount: fileResult.wordCount,
+          fileType: fileResult.fileType,
+          contentLength: fileResult.content.length,
+          contentPreview: fileResult.content.substring(0, 200) + '...'
+        });
+
+        content = fileResult.content;
+        sourceType = 'file';
+        sourceInfo = {
+          filename: uploadedFile.originalname,
+          title: fileResult.title,
+          excerpt: fileResult.excerpt,
+          fileType: fileResult.fileType,
+          wordCount: fileResult.wordCount,
+          ...(fileResult.pageCount && { pageCount: fileResult.pageCount })
+        };
+      } catch (fileError) {
+        console.error('❌ File processing failed:', fileError);
+        return res.status(400).json({
+          error: 'file_processing_failed',
+          message: `Failed to process file: ${fileError.message}`
+        });
+      }
+    } else if (url) {
       // Scrape website content
       const scrapingResult = await webScrapingService.scrapeUrl(url);
 
@@ -179,7 +242,7 @@ router.post('/analyze-content', async (req, res, next) => {
         title: scrapingResult.title,
         excerpt: scrapingResult.excerpt
       };
-    } else {
+    } else if (text) {
       // Process text content
       const textResult = await webScrapingService.processTextContent(text);
       content = textResult.content;
@@ -188,6 +251,11 @@ router.post('/analyze-content', async (req, res, next) => {
         title: textResult.title,
         excerpt: textResult.excerpt
       };
+    } else {
+      return res.status(400).json({
+        error: 'missing_content',
+        message: 'Please provide either a URL, text content, or upload a file to analyze.'
+      });
     }
 
     if (!content || content.length < 100) {

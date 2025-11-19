@@ -99,8 +99,22 @@ export const aiAPI = {
   analyzeSentence: (sentence) =>
     api.post('/ai/analyze-sentence', { sentence }),
 
-  analyzeContent: (data) =>
-    api.post('/ai/analyze-content', data),
+  analyzeContent: (data) => {
+    // Check if we have a file upload (FormData)
+    if (data.file && data.file instanceof FormData) {
+      // For file uploads, we need to use FormData and adjust headers
+      return api.post('/ai/analyze-content', data.file, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        // Increase timeout for file processing
+        timeout: 180000, // 3 minutes for file uploads
+      })
+    } else {
+      // Regular URL or text analysis
+      return api.post('/ai/analyze-content', data)
+    }
+  },
 
   chat: (message, conversationId) =>
     api.post('/ai/chat', { message, conversationId }),

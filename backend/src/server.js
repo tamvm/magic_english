@@ -91,6 +91,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Magic English Backend running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📊 Supabase URL: ${process.env.SUPABASE_URL ? 'Connected' : 'Not configured'}`);
+  console.log(`📁 File upload support: enabled (5MB limit)`);
 });
 
 export default app;

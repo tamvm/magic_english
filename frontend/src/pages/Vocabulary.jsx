@@ -14,9 +14,10 @@ const Vocabulary = () => {
   const [analyzing, setAnalyzing] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [showContentForm, setShowContentForm] = useState(false)
-  const [contentAnalysisMode, setContentAnalysisMode] = useState('url') // 'url' or 'text'
+  const [contentAnalysisMode, setContentAnalysisMode] = useState('url') // 'url', 'text', or 'file'
   const [contentUrl, setContentUrl] = useState('')
   const [contentText, setContentText] = useState('')
+  const [selectedFile, setSelectedFile] = useState(null)
   const [analyzingContent, setAnalyzingContent] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState({ step: 0, message: '', percentage: 0 })
   const [vocabularyResults, setVocabularyResults] = useState([])
@@ -86,18 +87,22 @@ const Vocabulary = () => {
       toast.error('Please enter text content to analyze')
       return
     }
+    if (contentAnalysisMode === 'file' && !selectedFile) {
+      toast.error('Please select a file to analyze')
+      return
+    }
 
     try {
       setAnalyzingContent(true)
       setVocabularyResults([])
       setSelectedWords(new Set())
 
-      const totalSteps = contentAnalysisMode === 'url' ? 8 : 6;
+      const totalSteps = contentAnalysisMode === 'url' ? 8 : contentAnalysisMode === 'file' ? 7 : 6;
 
       // Step 1: Initialize
       setAnalysisProgress({
         step: 1,
-        message: `Preparing to analyze ${contentAnalysisMode === 'url' ? 'website' : 'text'} content...`,
+        message: `Preparing to analyze ${contentAnalysisMode === 'url' ? 'website' : contentAnalysisMode === 'file' ? 'file' : 'text'} content...`,
         percentage: Math.round((1/totalSteps) * 100)
       })
       await new Promise(resolve => setTimeout(resolve, 800))
@@ -137,6 +142,44 @@ const Vocabulary = () => {
           percentage: Math.round((5/totalSteps) * 100)
         })
         await new Promise(resolve => setTimeout(resolve, 800))
+      } else if (contentAnalysisMode === 'file') {
+        // Step 2: Upload file
+        setAnalysisProgress({
+          step: 2,
+          message: 'Uploading file to server...',
+          percentage: Math.round((2/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 1000))
+
+        // Step 3: Processing file
+        setAnalysisProgress({
+          step: 3,
+          message: `Processing ${selectedFile.name}...`,
+          percentage: Math.round((3/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 800))
+
+        // Step 4: Extracting content
+        setAnalysisProgress({
+          step: 4,
+          message: 'Extracting text from file...',
+          percentage: Math.round((4/totalSteps) * 100)
+        })
+
+        // Create FormData for file upload
+        const formData = new FormData()
+        formData.append('file', selectedFile)
+        analysisData.file = formData
+
+        await new Promise(resolve => setTimeout(resolve, 1000))
+
+        // Step 5: Preparing content
+        setAnalysisProgress({
+          step: 5,
+          message: 'Preparing content for analysis...',
+          percentage: Math.round((5/totalSteps) * 100)
+        })
+        await new Promise(resolve => setTimeout(resolve, 600))
       } else {
         // Step 2: Processing text content
         setAnalysisProgress({
@@ -157,7 +200,7 @@ const Vocabulary = () => {
       }
 
       // AI Analysis Step
-      const aiStepNumber = contentAnalysisMode === 'url' ? 6 : 4;
+      const aiStepNumber = contentAnalysisMode === 'url' ? 6 : contentAnalysisMode === 'file' ? 6 : 4;
       setAnalysisProgress({
         step: aiStepNumber,
         message: 'AI analyzing vocabulary for your level...',
@@ -167,7 +210,7 @@ const Vocabulary = () => {
       const response = await aiAPI.analyzeContent(analysisData)
 
       // Step: Processing AI results
-      const resultStepNumber = contentAnalysisMode === 'url' ? 7 : 5;
+      const resultStepNumber = contentAnalysisMode === 'url' ? 7 : contentAnalysisMode === 'file' ? 7 : 5;
       setAnalysisProgress({
         step: resultStepNumber,
         message: 'Processing AI analysis results...',
@@ -273,6 +316,7 @@ const Vocabulary = () => {
         setShowContentForm(false)
         setContentUrl('')
         setContentText('')
+        setSelectedFile(null)
         setVocabularyResults([])
         setSelectedWords(new Set())
       }
@@ -452,13 +496,14 @@ const Vocabulary = () => {
             </div>
             <div className="card-body space-y-4">
               {/* Mode Selection */}
-              <div className="flex space-x-4">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => {
                     setContentAnalysisMode('url')
                     setContentText('')
+                    setSelectedFile(null)
                   }}
-                  className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                  className={`flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
                     contentAnalysisMode === 'url'
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
                       : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -471,8 +516,9 @@ const Vocabulary = () => {
                   onClick={() => {
                     setContentAnalysisMode('text')
                     setContentUrl('')
+                    setSelectedFile(null)
                   }}
-                  className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                  className={`flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
                     contentAnalysisMode === 'text'
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
                       : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -481,11 +527,26 @@ const Vocabulary = () => {
                   <Type className="h-4 w-4 mr-2" />
                   From Text
                 </button>
+                <button
+                  onClick={() => {
+                    setContentAnalysisMode('file')
+                    setContentUrl('')
+                    setContentText('')
+                  }}
+                  className={`flex items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                    contentAnalysisMode === 'file'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  From File
+                </button>
               </div>
 
               {/* Input Fields */}
               <div className="space-y-4">
-                {contentAnalysisMode === 'url' ? (
+                {contentAnalysisMode === 'url' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Website URL
@@ -502,7 +563,9 @@ const Vocabulary = () => {
                       Enter a URL to extract and analyze vocabulary from the main content
                     </p>
                   </div>
-                ) : (
+                )}
+
+                {contentAnalysisMode === 'text' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Text Content
@@ -519,6 +582,72 @@ const Vocabulary = () => {
                     </p>
                   </div>
                 )}
+
+                {contentAnalysisMode === 'file' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Upload File
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept=".txt,.pdf,.docx"
+                        onChange={(e) => {
+                          const file = e.target.files[0]
+                          if (file) {
+                            // Check file size (5MB limit)
+                            const maxSize = 5 * 1024 * 1024 // 5MB in bytes
+                            if (file.size > maxSize) {
+                              toast.error('File size must be less than 5MB')
+                              e.target.value = ''
+                              return
+                            }
+                            setSelectedFile(file)
+                          } else {
+                            setSelectedFile(null)
+                          }
+                        }}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label
+                        htmlFor="file-upload"
+                        className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                          selectedFile
+                            ? 'border-green-300 bg-green-50 dark:bg-green-900/20 dark:border-green-700'
+                            : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          {selectedFile ? (
+                            <>
+                              <FileText className="w-8 h-8 mb-2 text-green-500" />
+                              <p className="mb-1 text-sm text-green-700 dark:text-green-300 font-medium">
+                                {selectedFile.name}
+                              </p>
+                              <p className="text-xs text-green-600 dark:text-green-400">
+                                {(selectedFile.size / 1024).toFixed(1)} KB • Click to change
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-8 h-8 mb-2 text-gray-400" />
+                              <p className="mb-1 text-sm text-gray-500 dark:text-gray-400">
+                                <span className="font-semibold">Click to upload</span> or drag and drop
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                TXT, PDF, DOCX (max 5MB)
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Upload a document to extract vocabulary suitable for your level
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Progress Bar */}
@@ -526,7 +655,7 @@ const Vocabulary = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-700 dark:text-gray-300 font-medium">
-                      Step {analysisProgress.step}/{contentAnalysisMode === 'url' ? '8' : '6'}: {analysisProgress.message}
+                      Step {analysisProgress.step}/{contentAnalysisMode === 'url' ? '8' : contentAnalysisMode === 'file' ? '7' : '6'}: {analysisProgress.message}
                     </span>
                     <span className="text-blue-600 dark:text-blue-400 font-bold text-lg">
                       {analysisProgress.percentage}%
@@ -545,7 +674,7 @@ const Vocabulary = () => {
 
                     {/* Step indicators */}
                     <div className="flex justify-between mt-2">
-                      {Array.from({ length: contentAnalysisMode === 'url' ? 8 : 6 }, (_, i) => (
+                      {Array.from({ length: contentAnalysisMode === 'url' ? 8 : contentAnalysisMode === 'file' ? 7 : 6 }, (_, i) => (
                         <div
                           key={i}
                           className={`h-2 w-2 rounded-full transition-all duration-300 ${
@@ -580,7 +709,8 @@ const Vocabulary = () => {
                   disabled={
                     analyzingContent ||
                     (contentAnalysisMode === 'url' && !contentUrl.trim()) ||
-                    (contentAnalysisMode === 'text' && !contentText.trim())
+                    (contentAnalysisMode === 'text' && !contentText.trim()) ||
+                    (contentAnalysisMode === 'file' && !selectedFile)
                   }
                   className="btn-primary"
                 >
