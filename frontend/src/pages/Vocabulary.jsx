@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Search, Plus, Download, Upload, Sparkles, Edit2, Trash2, BookOpen, Link, FileText, Globe, Type } from 'lucide-react'
+import { Search, Plus, Download, Upload, Sparkles, Edit2, Trash2, BookOpen, Link, FileText, Globe, Type, Play } from 'lucide-react'
 import { wordsAPI, aiAPI } from '@/lib/api'
 import { debounce, getCefrColor, getWordTypeColor, formatDate } from '@/lib/utils'
 import LoadingSpinner from '@/components/UI/LoadingSpinner'
@@ -117,10 +117,12 @@ const Vocabulary = () => {
         })
         await new Promise(resolve => setTimeout(resolve, 1000))
 
-        // Step 3: Fetching website
+        // Step 3: Fetching website or YouTube transcript
+        const hostname = new URL(contentUrl.trim()).hostname;
+        const isYoutube = hostname.includes('youtube.com') || hostname.includes('youtu.be');
         setAnalysisProgress({
           step: 3,
-          message: `Loading website: ${new URL(contentUrl.trim()).hostname}`,
+          message: isYoutube ? `Extracting YouTube transcript...` : `Loading website: ${hostname}`,
           percentage: Math.round((3/totalSteps) * 100)
         })
         analysisData.url = contentUrl.trim()
@@ -130,7 +132,7 @@ const Vocabulary = () => {
         // Step 4: Extracting content
         setAnalysisProgress({
           step: 4,
-          message: 'Extracting main article content...',
+          message: isYoutube ? 'Processing video subtitles...' : 'Extracting main article content...',
           percentage: Math.round((4/totalSteps) * 100)
         })
         await new Promise(resolve => setTimeout(resolve, 1000))
@@ -138,7 +140,7 @@ const Vocabulary = () => {
         // Step 5: Processing content
         setAnalysisProgress({
           step: 5,
-          message: 'Processing extracted text...',
+          message: isYoutube ? 'Converting transcript to text...' : 'Processing extracted text...',
           percentage: Math.round((5/totalSteps) * 100)
         })
         await new Promise(resolve => setTimeout(resolve, 800))
@@ -551,16 +553,27 @@ const Vocabulary = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Website URL
                     </label>
-                    <input
-                      type="url"
-                      className="form-input"
-                      placeholder="https://example.com/article"
-                      value={contentUrl}
-                      onChange={(e) => setContentUrl(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && analyzeContent()}
-                    />
+                    <div className="relative">
+                      <input
+                        type="url"
+                        className="form-input pr-10"
+                        placeholder="https://example.com/article or https://youtube.com/watch?v=..."
+                        value={contentUrl}
+                        onChange={(e) => setContentUrl(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && analyzeContent()}
+                      />
+                      {contentUrl && (contentUrl.includes('youtube.com') || contentUrl.includes('youtu.be')) && (
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <Play className="h-4 w-4 text-red-500" />
+                        </div>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Enter a URL to extract and analyze vocabulary from the main content
+                      <span className="inline-flex items-center">
+                        Enter a website URL or
+                        <Play className="h-3 w-3 mx-1 text-red-500" />
+                        YouTube video URL to extract and analyze vocabulary
+                      </span>
                     </p>
                   </div>
                 )}

@@ -4,6 +4,7 @@ import multer from 'multer';
 import { aiService } from '../services/aiService.js';
 import { webScrapingService } from '../services/webScrapingService.js';
 import { fileProcessingService } from '../services/fileProcessingService.js';
+import { youtubeTranscriptService } from '../services/youtubeTranscriptService.js';
 
 const router = express.Router();
 
@@ -225,23 +226,46 @@ router.post('/analyze-content', upload.single('file'), async (req, res, next) =>
         });
       }
     } else if (url) {
-      // Scrape website content
-      const scrapingResult = await webScrapingService.scrapeUrl(url);
+      // Check if URL is a YouTube video
+      if (youtubeTranscriptService.isYouTubeUrl(url)) {
+        console.log('🎥 Detected YouTube URL, extracting transcript...');
+        const transcriptResult = await youtubeTranscriptService.processYouTubeUrl(url);
 
-      if (!scrapingResult.success) {
-        return res.status(400).json({
-          error: 'website_scraping_failed',
-          message: `Failed to extract content from website: ${scrapingResult.error}`
-        });
+        if (!transcriptResult.success) {
+          return res.status(400).json({
+            error: 'youtube_transcript_failed',
+            message: `Failed to extract YouTube transcript: ${transcriptResult.error}`
+          });
+        }
+
+        content = transcriptResult.content;
+        sourceType = 'youtube';
+        sourceInfo = {
+          url: transcriptResult.url,
+          title: transcriptResult.title,
+          excerpt: transcriptResult.excerpt,
+          videoInfo: transcriptResult.videoInfo
+        };
+        console.log('✅ YouTube transcript extracted successfully');
+      } else {
+        // Scrape regular website content
+        const scrapingResult = await webScrapingService.scrapeUrl(url);
+
+        if (!scrapingResult.success) {
+          return res.status(400).json({
+            error: 'website_scraping_failed',
+            message: `Failed to extract content from website: ${scrapingResult.error}`
+          });
+        }
+
+        content = scrapingResult.content;
+        sourceType = 'website';
+        sourceInfo = {
+          url: scrapingResult.url,
+          title: scrapingResult.title,
+          excerpt: scrapingResult.excerpt
+        };
       }
-
-      content = scrapingResult.content;
-      sourceType = 'website';
-      sourceInfo = {
-        url: scrapingResult.url,
-        title: scrapingResult.title,
-        excerpt: scrapingResult.excerpt
-      };
     } else if (text) {
       // Process text content
       const textResult = await webScrapingService.processTextContent(text);
@@ -295,6 +319,10 @@ router.post('/analyze-content', upload.single('file'), async (req, res, next) =>
     let errorMessage = 'Content analysis failed';
     if (error.message.includes('website_scraping_failed')) {
       errorMessage = 'Failed to extract content from website. The site may be blocking automated access.';
+    } else if (error.message.includes('youtube_transcript_failed')) {
+      errorMessage = 'Failed to extract YouTube transcript. The video may not have English subtitles available.';
+    } else if (error.message.includes('Invalid YouTube URL')) {
+      errorMessage = 'The provided YouTube URL is not valid.';
     } else if (error.message.includes('insufficient_content')) {
       errorMessage = 'The content is too short to analyze effectively.';
     } else if (error.message.includes('AI service unavailable')) {
