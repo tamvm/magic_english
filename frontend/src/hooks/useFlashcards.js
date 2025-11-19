@@ -9,17 +9,28 @@ export const useFlashcards = () => {
   const [currentSession, setCurrentSession] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [includeQuizQuestions, setIncludeQuizQuestions] = useState(false);
 
   // Fetch cards due for review
-  const fetchDueCards = async (limit = 20, includeQuizQuestions = false) => {
+  const fetchDueCards = async (limit = 20, includeQuizQuestionsParam = null) => {
     try {
       setLoading(true);
       setError(null);
 
+      // Use parameter if provided, otherwise use stored state
+      const shouldIncludeQuiz = includeQuizQuestionsParam !== null
+        ? includeQuizQuestionsParam
+        : includeQuizQuestions;
+
+      // Update the stored state
+      if (includeQuizQuestionsParam !== null) {
+        setIncludeQuizQuestions(includeQuizQuestionsParam);
+      }
+
       const response = await flashcardAPI.getDueCards({
         limit,
         includeNew: true,
-        includeQuizQuestions
+        includeQuizQuestions: shouldIncludeQuiz
       });
 
       setDueCards(response.data.cards);
@@ -47,7 +58,7 @@ export const useFlashcards = () => {
       const response = await flashcardAPI.startSession();
       setCurrentSession(response.data.session);
 
-      // Fetch due cards after starting session
+      // Fetch due cards after starting session with current quiz mode
       await fetchDueCards();
 
       return response.data.session;
@@ -98,7 +109,7 @@ export const useFlashcards = () => {
         setCurrentCard(dueCards[nextIndex]);
         setCurrentCardIndex(nextIndex);
       } else {
-        // No more cards, fetch new due cards
+        // No more cards, fetch new due cards with same quiz mode
         await fetchDueCards();
       }
 
@@ -121,7 +132,7 @@ export const useFlashcards = () => {
         setCurrentCard(dueCards[nextIndex]);
         setCurrentCardIndex(nextIndex);
       } else {
-        // No more cards, fetch new due cards
+        // No more cards, fetch new due cards with same quiz mode
         fetchDueCards();
       }
 

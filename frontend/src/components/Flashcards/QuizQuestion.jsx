@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckCircle,
   XCircle,
@@ -8,6 +8,11 @@ import {
 const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Reset selected answer when question changes or when showAnswer becomes false
+  useEffect(() => {
+    setSelectedAnswer('');
+  }, [question, showAnswer]);
 
   if (!question) {
     return (

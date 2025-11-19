@@ -14,6 +14,7 @@ import {
 
 import { useFlashcards } from '../hooks/useFlashcards';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { flashcardAPI } from '../lib/api';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import FlashCard from '../components/Flashcards/FlashCard';
 import QuizQuestion from '../components/Flashcards/QuizQuestion';
@@ -49,6 +50,9 @@ const Study = () => {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [quizAnswer, setQuizAnswer] = useState('');
   const [showQuizAnswer, setShowQuizAnswer] = useState(false);
+  const [allQuizQuestions, setAllQuizQuestions] = useState([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [loadingQuizQuestions, setLoadingQuizQuestions] = useState(false);
 
   // Study session state
   const [studyStats, setStudyStats] = useState({
@@ -98,23 +102,53 @@ const Study = () => {
     }
   }, [currentCard, studyMode]);
 
+  // Fetch all quiz questions for quiz mode
+  const fetchAllQuizQuestions = async () => {
+    try {
+      setLoadingQuizQuestions(true);
+      const response = await flashcardAPI.getAllQuizQuestions({ limit: 100 });
+
+      if (response.data.questions && response.data.questions.length > 0) {
+        // Shuffle the questions for variety
+        const shuffled = response.data.questions.sort(() => Math.random() - 0.5);
+        setAllQuizQuestions(shuffled);
+        setCurrentQuestion(shuffled[0]);
+        setCurrentQuestionIndex(0);
+        return true;
+      } else {
+        setAllQuizQuestions([]);
+        setCurrentQuestion(null);
+        return false;
+      }
+    } catch (error) {
+      console.error('Failed to fetch quiz questions:', error);
+      setAllQuizQuestions([]);
+      setCurrentQuestion(null);
+      return false;
+    } finally {
+      setLoadingQuizQuestions(false);
+    }
+  };
+
   // Switch study mode and refetch cards
   const switchStudyMode = async (mode) => {
     if (mode === studyMode) return;
 
     setStudyMode(mode);
 
-    // Refetch cards with or without quiz questions based on mode
-    if (mode === 'quiz') {
-      await fetchDueCards(20, true); // Include quiz questions
-    } else {
-      await fetchDueCards(20, false); // Don't include quiz questions
-    }
-
     // Reset quiz states
     setCurrentQuestion(null);
     setQuizAnswer('');
     setShowQuizAnswer(false);
+
+    if (mode === 'quiz') {
+      // For quiz mode, fetch all available quiz questions
+      // Don't depend on due cards - show quiz from any vocabulary
+      await fetchAllQuizQuestions();
+    } else {
+      // For flashcard mode, fetch due cards
+      await fetchDueCards(20, false);
+    }
   };
 
   // Handle quiz answer submission
@@ -133,12 +167,26 @@ const Study = () => {
     setStudyStats(prev => ({
       ...prev,
       totalAnswers: prev.totalAnswers + 1,
-      correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0)
+      correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0),
+      cardsStudied: prev.cardsStudied + 1
     }));
 
-    // Rate based on quiz answer (correct = Easy, incorrect = Hard)
-    const rating = isCorrect ? 4 : 2; // 4 = Easy, 2 = Hard
-    handleCardRating(rating);
+    // Move to next quiz question
+    const nextIndex = currentQuestionIndex + 1;
+    if (nextIndex < allQuizQuestions.length) {
+      setCurrentQuestionIndex(nextIndex);
+      setCurrentQuestion(allQuizQuestions[nextIndex]);
+      setQuizAnswer('');
+      setShowQuizAnswer(false);
+    } else {
+      // No more questions, shuffle and start over
+      const shuffled = allQuizQuestions.sort(() => Math.random() - 0.5);
+      setAllQuizQuestions(shuffled);
+      setCurrentQuestionIndex(0);
+      setCurrentQuestion(shuffled[0]);
+      setQuizAnswer('');
+      setShowQuizAnswer(false);
+    }
   };
 
   // Keyboard shortcuts
@@ -501,30 +549,87 @@ const Study = () => {
     );
   }
 
-  // No cards available
-  if (!loading && (!dueCards || dueCards.length === 0)) {
+  // No cards available (only show this if not in quiz mode or quiz has no questions)
+  if (!loading && !loadingQuizQuestions &&
+      ((studyMode === 'flashcard' && (!dueCards || dueCards.length === 0)) ||
+       (studyMode === 'quiz' && (!allQuizQuestions || allQuizQuestions.length === 0)))) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            No Cards Due
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300 mb-4">
-            Great job! You've completed all your reviews for today.
-          </p>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
-          >
-            Back to Dashboard
-          </button>
+      <>
+        <Helmet>
+          <title>Study Session - Magic English</title>
+        </Helmet>
+
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Header with Mode Toggle */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-4">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  Study Session
+                </h1>
+
+                {/* Mode Toggle */}
+                <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+                  <button
+                    onClick={() => switchStudyMode('flashcard')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      studyMode === 'flashcard'
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
+                    }`}
+                  >
+                    Flashcards
+                  </button>
+                  <button
+                    onClick={() => switchStudyMode('quiz')}
+                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                      studyMode === 'quiz'
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
+                    }`}
+                  >
+                    Quiz
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="p-2 text-gray-600 hover:text-red-600 dark:text-gray-300 dark:hover:text-red-400"
+                title="Back to Dashboard"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* No Cards Message */}
+            <div className="flex items-center justify-center">
+              <div className="text-center">
+                <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                  No Cards Due
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">
+                  Great job! You've completed all your reviews for today.
+                </p>
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  if (loading || !currentCard) {
+  // Show loading spinner
+  if (loading || loadingQuizQuestions ||
+      (studyMode === 'flashcard' && !currentCard) ||
+      (studyMode === 'quiz' && !currentQuestion)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <LoadingSpinner size="lg" />
@@ -578,7 +683,11 @@ const Study = () => {
                 </div>
                 <div className="flex items-center space-x-1 text-blue-600 dark:text-blue-400 font-semibold">
                   <Flame className="h-4 w-4" />
-                  <span>{cardsRemaining} remaining</span>
+                  <span>
+                    {studyMode === 'flashcard'
+                      ? `${cardsRemaining} remaining`
+                      : `${allQuizQuestions.length - currentQuestionIndex - 1} remaining`}
+                  </span>
                 </div>
                 <div className="flex items-center space-x-1 text-purple-600 dark:text-purple-400">
                   <span className="text-xs">Review in: {10 - (studyStats.cardsStudied % 10)} cards</span>
@@ -645,33 +754,27 @@ const Study = () => {
                   showAnswer={showQuizAnswer}
                   onNext={handleQuizNext}
                 />
-              ) : currentCard ? (
+              ) : (
                 <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
                   <div className="text-yellow-600 dark:text-yellow-400 mb-4">
                     <HelpCircle className="h-12 w-12 mx-auto" />
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                    No Quiz Question Available
+                    No Quiz Questions Available
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400 mb-6">
-                    This word doesn't have a quiz question yet. You can still study it with flashcards.
+                    No quiz questions found for your vocabulary. You can still study with flashcards.
                   </p>
                   <div className="flex gap-4 justify-center">
                     <button
                       onClick={() => switchStudyMode('flashcard')}
-                      className="btn-primary"
+                      className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
                     >
                       Switch to Flashcards
                     </button>
-                    <button
-                      onClick={() => handleCardRating(3)}
-                      className="btn-secondary"
-                    >
-                      Skip This Card
-                    </button>
                   </div>
                 </div>
-              ) : null
+              )
             )}
 
             {/* Help hint */}
