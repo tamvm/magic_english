@@ -23,6 +23,9 @@ const Vocabulary = () => {
   const [vocabularyResults, setVocabularyResults] = useState([])
   const [selectedWords, setSelectedWords] = useState(new Set())
   const [savingSelected, setSavingSelected] = useState(false)
+  const [sourceInfo, setSourceInfo] = useState(null)
+  const [originalContent, setOriginalContent] = useState('')
+  const [showContentViewer, setShowContentViewer] = useState(false)
 
   useEffect(() => {
     loadWords()
@@ -96,6 +99,9 @@ const Vocabulary = () => {
       setAnalyzingContent(true)
       setVocabularyResults([])
       setSelectedWords(new Set())
+      setSourceInfo(null)
+      setOriginalContent('')
+      setShowContentViewer(false)
 
       const totalSteps = contentAnalysisMode === 'url' ? 8 : contentAnalysisMode === 'file' ? 7 : 6;
 
@@ -229,9 +235,13 @@ const Vocabulary = () => {
 
       if (response.data.vocabulary && response.data.vocabulary.length > 0) {
         setVocabularyResults(response.data.vocabulary)
+        setSourceInfo(response.data.sourceInfo || null)
+        setOriginalContent(response.data.originalContent || '')
         toast.success(response.data.message || `Found ${response.data.vocabulary.length} vocabulary items`)
       } else {
         setVocabularyResults([])
+        setSourceInfo(response.data.sourceInfo || null)
+        setOriginalContent(response.data.originalContent || '')
         toast.info(response.data.message || 'No new vocabulary found')
       }
     } catch (error) {
@@ -321,6 +331,9 @@ const Vocabulary = () => {
         setSelectedFile(null)
         setVocabularyResults([])
         setSelectedWords(new Set())
+        setSourceInfo(null)
+        setOriginalContent('')
+        setShowContentViewer(false)
       }
     } catch (error) {
       toast.error('Failed to save selected words')
@@ -754,12 +767,44 @@ const Vocabulary = () => {
                       <p className="text-blue-100 text-sm">
                         Select the words you want to add to your vocabulary collection
                       </p>
+                      {(sourceInfo && (sourceInfo.url || sourceInfo.filename)) || originalContent ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {sourceInfo.url ? (
+                            <a
+                              href={sourceInfo.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-blue-100 hover:text-white text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full transition-colors"
+                            >
+                              <Link className="h-4 w-4 mr-2" />
+                              View Original {sourceInfo.url.includes('youtube.com') || sourceInfo.url.includes('youtu.be') ? 'Video' : 'Content'}
+                            </a>
+                          ) : sourceInfo.filename && (
+                            <div className="inline-flex items-center text-blue-100 text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">
+                              <FileText className="h-4 w-4 mr-2" />
+                              From: {sourceInfo.filename}
+                            </div>
+                          )}
+                          {originalContent && (
+                            <button
+                              onClick={() => setShowContentViewer(true)}
+                              className="inline-flex items-center text-blue-100 hover:text-white text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full transition-colors"
+                            >
+                              <BookOpen className="h-4 w-4 mr-2" />
+                              View {sourceInfo?.url?.includes('youtube.com') || sourceInfo?.url?.includes('youtu.be') ? 'Transcript' : sourceInfo?.filename ? 'File Content' : 'Text Content'}
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   <button
                     onClick={() => {
                       setVocabularyResults([])
                       setSelectedWords(new Set())
+                      setSourceInfo(null)
+                      setOriginalContent('')
+                      setShowContentViewer(false)
                     }}
                     className="text-white hover:text-gray-200 p-2"
                   >
@@ -889,6 +934,65 @@ const Vocabulary = () => {
                     </tbody>
                   </table>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content Viewer Modal */}
+        {showContentViewer && originalContent && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+              <div className="card-header bg-gradient-to-r from-green-500 to-blue-600 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-white bg-opacity-20 p-2 rounded-full">
+                      <BookOpen className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold">
+                        {sourceInfo?.url?.includes('youtube.com') || sourceInfo?.url?.includes('youtu.be')
+                          ? '📺 Video Transcript'
+                          : sourceInfo?.filename
+                            ? '📄 File Content'
+                            : '📝 Original Text Content'}
+                      </h3>
+                      <p className="text-green-100 text-sm">
+                        {sourceInfo?.title || 'Content used for vocabulary analysis'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowContentViewer(false)}
+                    className="text-white hover:text-gray-200 p-2"
+                  >
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="prose prose-sm max-w-none dark:prose-invert">
+                  <div className="whitespace-pre-wrap text-gray-900 dark:text-gray-100 leading-relaxed">
+                    {originalContent}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600">
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    {originalContent.length.toLocaleString()} characters • {Math.ceil(originalContent.length / 1000)} words (approx.)
+                  </div>
+                  <button
+                    onClick={() => setShowContentViewer(false)}
+                    className="btn-secondary"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
             </div>

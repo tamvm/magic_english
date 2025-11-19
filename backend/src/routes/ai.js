@@ -298,6 +298,7 @@ router.post('/analyze-content', upload.single('file'), async (req, res, next) =>
         sourceType,
         sourceInfo,
         userCefrLevel,
+        originalContent: content,
         message: 'No new vocabulary found in the content that matches your current level.'
       });
     }
@@ -308,6 +309,7 @@ router.post('/analyze-content', upload.single('file'), async (req, res, next) =>
       sourceInfo,
       userCefrLevel,
       totalFound: vocabulary.length,
+      originalContent: content,
       message: `Found ${vocabulary.length} vocabulary items for your level (${userCefrLevel})`
     });
 
