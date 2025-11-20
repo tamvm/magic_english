@@ -580,10 +580,23 @@ Provide only valid JSON array without additional text.`;
             throw new Error('Response is not an array');
           }
 
+          // Create a map of word IDs for quick lookup
+          const wordMap = new Map(words.map(word => [word.id, word]));
+
           // Validate and clean up each question
           const validatedQuestions = questions.map((question, index) => {
-            const word = words[index];
-            if (!word) return null;
+            // Use word_id from question if provided, otherwise fall back to index mapping
+            let word;
+            if (question.word_id && wordMap.has(question.word_id)) {
+              word = wordMap.get(question.word_id);
+            } else {
+              word = words[index];
+            }
+
+            if (!word) {
+              console.warn(`No word found for question at index ${index}, word_id: ${question.word_id}`);
+              return null;
+            }
 
             // Map AI response question types to database types
             let questionType = question.question_type || 'definition_choice';

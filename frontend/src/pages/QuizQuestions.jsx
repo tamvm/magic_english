@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Search, RefreshCw, BookOpen, Edit2, Trash2, Plus, Filter, Eye } from 'lucide-react';
+import { Search, BookOpen, Edit2, Trash2, Plus, Filter, Eye } from 'lucide-react';
 import { flashcardAPI, wordsAPI } from '@/lib/api';
 import { getCefrColor, getWordTypeColor, formatDate } from '@/lib/utils';
 import LoadingSpinner from '@/components/UI/LoadingSpinner';
@@ -56,7 +56,7 @@ const QuizQuestions = () => {
   const generateQuizQuestions = async () => {
     try {
       setGenerating(true);
-      const response = await wordsAPI.generateQuizQuestions({});
+      const response = await wordsAPI.generateQuizQuestions({ regenerateAll: false });
 
       toast.success(response.data.message || 'Quiz questions generated successfully!');
 
@@ -70,26 +70,21 @@ const QuizQuestions = () => {
     }
   };
 
-  const regenerateAllQuestions = async () => {
-    if (!confirm('Are you sure you want to regenerate ALL quiz questions? This will delete existing questions and create new ones.')) {
+
+  const deleteQuizQuestion = async (questionId) => {
+    if (!confirm('Are you sure you want to delete this quiz question?')) {
       return;
     }
 
     try {
-      setGenerating(true);
-      const response = await wordsAPI.generateQuizQuestions({
-        regenerateAll: true
-      });
+      await flashcardAPI.deleteQuizQuestion(questionId);
+      toast.success('Quiz question deleted successfully');
 
-      toast.success(response.data.message || 'All quiz questions regenerated successfully!');
-
-      // Reload quiz questions
-      await loadQuizQuestions();
+      // Remove the question from the local state
+      setQuizQuestions(prev => prev.filter(q => q.id !== questionId));
     } catch (error) {
-      console.error('Failed to regenerate quiz questions:', error);
-      toast.error('Failed to regenerate quiz questions');
-    } finally {
-      setGenerating(false);
+      console.error('Failed to delete quiz question:', error);
+      toast.error('Failed to delete quiz question');
     }
   };
 
@@ -179,14 +174,6 @@ const QuizQuestions = () => {
                 <Plus className="h-4 w-4 mr-2" />
               )}
               Generate Missing
-            </button>
-            <button
-              onClick={regenerateAllQuestions}
-              disabled={generating}
-              className="btn-secondary"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Regenerate All
             </button>
           </div>
         </div>
@@ -330,12 +317,21 @@ const QuizQuestions = () => {
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
-                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-4"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-2 ml-4">
+                          <button
+                            onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteQuizQuestion(question.id)}
+                            className="text-red-400 hover:text-red-600 dark:hover:text-red-300"
+                            title="Delete Quiz Question"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Expanded Details */}

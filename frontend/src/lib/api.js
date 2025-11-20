@@ -173,6 +173,9 @@ export const flashcardAPI = {
 
   submitQuizAnswer: (questionId, data) =>
     api.post(`/flashcards/quiz/${questionId}/answer`, data),
+
+  deleteQuizQuestion: (questionId) =>
+    api.delete(`/flashcards/quiz-questions/${questionId}`),
 }
 
 export default api
