@@ -222,3 +222,14 @@ export const WORD_TYPES = [
 ]
 
 export const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+
+export function normalizeQuizAnswer(answer) {
+  if (!answer || typeof answer !== 'string') return ''
+  return answer.trim().toLowerCase()
+}
+
+export function compareQuizAnswers(userAnswer, correctAnswer) {
+  const normalizedUser = normalizeQuizAnswer(userAnswer)
+  const normalizedCorrect = normalizeQuizAnswer(correctAnswer)
+  return normalizedUser === normalizedCorrect
+}

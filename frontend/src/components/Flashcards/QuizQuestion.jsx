@@ -4,6 +4,7 @@ import {
   XCircle,
   Info,
 } from 'lucide-react';
+import { compareQuizAnswers } from '../../lib/utils';
 
 const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
   const [selectedAnswer, setSelectedAnswer] = useState('');
@@ -40,8 +41,8 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
     onAnswer(answer);
   };
 
-  const isCorrect = showAnswer && selectedAnswer === question.correct_answer;
-  const isIncorrect = showAnswer && selectedAnswer !== question.correct_answer;
+  const isCorrect = showAnswer && compareQuizAnswers(selectedAnswer, question.correct_answer);
+  const isIncorrect = showAnswer && !compareQuizAnswers(selectedAnswer, question.correct_answer);
 
   const getQuestionTypeLabel = (type) => {
     switch (type) {
@@ -55,16 +56,16 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
 
   const getOptionStyle = (option) => {
     if (!showAnswer) {
-      return selectedAnswer === option
+      return compareQuizAnswers(selectedAnswer, option)
         ? 'bg-blue-100 border-blue-500 text-blue-900 dark:bg-blue-900/20 dark:border-blue-400 dark:text-blue-100'
         : 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-700';
     }
 
-    if (option === question.correct_answer) {
+    if (compareQuizAnswers(option, question.correct_answer)) {
       return 'bg-green-100 border-green-500 text-green-900 dark:bg-green-900/20 dark:border-green-400 dark:text-green-100';
     }
 
-    if (option === selectedAnswer && option !== question.correct_answer) {
+    if (compareQuizAnswers(option, selectedAnswer) && !compareQuizAnswers(option, question.correct_answer)) {
       return 'bg-red-100 border-red-500 text-red-900 dark:bg-red-900/20 dark:border-red-400 dark:text-red-100';
     }
 
@@ -74,11 +75,11 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
   const getOptionIcon = (option) => {
     if (!showAnswer) return null;
 
-    if (option === question.correct_answer) {
+    if (compareQuizAnswers(option, question.correct_answer)) {
       return <CheckCircle className="h-5 w-5 text-green-600" />;
     }
 
-    if (option === selectedAnswer && option !== question.correct_answer) {
+    if (compareQuizAnswers(option, selectedAnswer) && !compareQuizAnswers(option, question.correct_answer)) {
       return <XCircle className="h-5 w-5 text-red-600" />;
     }
 

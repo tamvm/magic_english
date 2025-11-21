@@ -15,6 +15,7 @@ import {
 import { useFlashcards } from '../hooks/useFlashcards';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { flashcardAPI } from '../lib/api';
+import { compareQuizAnswers } from '../lib/utils';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import FlashCard from '../components/Flashcards/FlashCard';
 import QuizQuestion from '../components/Flashcards/QuizQuestion';
@@ -165,7 +166,7 @@ const Study = () => {
 
     setIsRatingInProgress(true);
 
-    const isCorrect = quizAnswer === currentQuestion?.correct_answer;
+    const isCorrect = compareQuizAnswers(quizAnswer, currentQuestion?.correct_answer);
 
     try {
       // Submit the quiz answer with spaced repetition
