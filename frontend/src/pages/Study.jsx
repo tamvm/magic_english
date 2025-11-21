@@ -54,6 +54,7 @@ const Study = () => {
   const [allQuizQuestions, setAllQuizQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [loadingQuizQuestions, setLoadingQuizQuestions] = useState(false);
+  const [preloadingNextBatch, setPreloadingNextBatch] = useState(false);
 
   // Study session state
   const [studyStats, setStudyStats] = useState({
@@ -101,6 +102,32 @@ const Study = () => {
       setIsRatingInProgress(false);
     }
   }, [currentQuestion, studyMode]);
+
+  // Preload next batch of questions when running low
+  const preloadNextQuestionBatch = async () => {
+    if (preloadingNextBatch) return; // Avoid multiple simultaneous preloads
+
+    try {
+      setPreloadingNextBatch(true);
+      console.log('Preloading next batch of quiz questions...');
+      const response = await flashcardAPI.getAllQuizQuestions({ limit: 50, includeNew: true });
+
+      if (response.data.questions && response.data.questions.length > 0) {
+        // Append new questions to existing ones (avoiding duplicates)
+        const existingIds = new Set(allQuizQuestions.map(q => q.id));
+        const newQuestions = response.data.questions.filter(q => !existingIds.has(q.id));
+
+        if (newQuestions.length > 0) {
+          setAllQuizQuestions(prev => [...prev, ...newQuestions]);
+          console.log(`Preloaded ${newQuestions.length} new questions`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to preload next question batch:', error);
+    } finally {
+      setPreloadingNextBatch(false);
+    }
+  };
 
   // Fetch all quiz questions for quiz mode with spaced repetition
   const fetchAllQuizQuestions = async () => {
@@ -160,97 +187,108 @@ const Study = () => {
     setShowQuizAnswer(true);
   };
 
-  // Handle quiz next (after seeing answer)
-  const handleQuizNext = async () => {
+  // Submit quiz answer in background without blocking UI
+  const submitQuizAnswerInBackground = async (questionData, answerData, isCorrect) => {
+    try {
+      console.log('Submitting quiz answer in background:', {
+        questionId: questionData.id,
+        userAnswer: answerData.userAnswer,
+        responseTime: answerData.responseTime,
+        isCorrect: isCorrect
+      });
+
+      const result = await flashcardAPI.submitQuizAnswer(questionData.id, answerData);
+      console.log('Quiz answer submitted successfully:', result);
+    } catch (error) {
+      console.error('Failed to submit quiz answer in background:', error);
+
+      // Only show critical errors to user (avoid disrupting flow)
+      if (error.message.includes('Network Error')) {
+        console.warn('Network error submitting answer - this may affect spaced repetition scheduling');
+      }
+    }
+  };
+
+  // Handle quiz next (after seeing answer) - optimized for speed
+  const handleQuizNext = () => {
     if (!showQuizAnswer || isRatingInProgress || !currentQuestion) return;
 
     setIsRatingInProgress(true);
 
     const isCorrect = compareQuizAnswers(quizAnswer, currentQuestion?.correct_answer);
+    const responseTime = cardStartTime ? Date.now() - cardStartTime : 1000;
 
-    try {
-      // Submit the quiz answer with spaced repetition
-      const responseTime = cardStartTime ? Date.now() - cardStartTime : 1000;
-      console.log('Submitting quiz answer:', {
-        questionId: currentQuestion.id,
-        userAnswer: quizAnswer,
-        responseTime: responseTime,
-        isCorrect: isCorrect
-      });
+    // Prepare data for background submission
+    const questionData = { ...currentQuestion };
+    const answerData = {
+      userAnswer: quizAnswer,
+      responseTime: responseTime,
+      cardId: null // No specific flashcard associated
+    };
 
-      const result = await flashcardAPI.submitQuizAnswer(currentQuestion.id, {
-        userAnswer: quizAnswer,
-        responseTime: responseTime,
-        cardId: null // No specific flashcard associated
-      });
+    // Update study stats immediately (optimistic update)
+    setStudyStats(prev => ({
+      ...prev,
+      totalAnswers: prev.totalAnswers + 1,
+      correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0),
+      cardsStudied: prev.cardsStudied + 1
+    }));
 
-      console.log('Quiz answer submitted successfully:', result);
-
-      // Update study stats
-      setStudyStats(prev => ({
-        ...prev,
-        totalAnswers: prev.totalAnswers + 1,
-        correctAnswers: prev.correctAnswers + (isCorrect ? 1 : 0),
-        cardsStudied: prev.cardsStudied + 1
-      }));
-
-      // If answer was wrong, we'll see this question again soon due to spaced repetition
-      // If answer was correct, the question will be scheduled for later review
-
-      // Move to next quiz question
-      const nextIndex = currentQuestionIndex + 1;
-      if (nextIndex < allQuizQuestions.length) {
-        setCurrentQuestionIndex(nextIndex);
-        setCurrentQuestion(allQuizQuestions[nextIndex]);
-        setQuizAnswer('');
-        setShowQuizAnswer(false);
-        setCardStartTime(Date.now()); // Reset timer for next question
-      } else {
-        // No more questions, fetch fresh questions (this will include any wrong answers due soon)
-        await fetchAllQuizQuestions();
-      }
-
-    } catch (error) {
-      console.error('Failed to submit quiz answer:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response?.data
-      });
-
-      // Show user notification about submission failure (only for certain types of errors)
-      if (error.message.includes('Network Error') || error.message.includes('timeout')) {
-        alert(`Warning: Your answer was not saved due to a connection error. Please check your internet connection and try again.\n\nError: ${error.message}`);
-      }
-
-      // Continue to next question even if submission failed
-      const nextIndex = currentQuestionIndex + 1;
-      if (nextIndex < allQuizQuestions.length) {
-        setCurrentQuestionIndex(nextIndex);
-        setCurrentQuestion(allQuizQuestions[nextIndex]);
-        setQuizAnswer('');
-        setShowQuizAnswer(false);
-        setCardStartTime(Date.now());
-      } else {
-        await fetchAllQuizQuestions();
-      }
-    } finally {
+    // Move to next quiz question immediately
+    const nextIndex = currentQuestionIndex + 1;
+    if (nextIndex < allQuizQuestions.length) {
+      // Show next question immediately
+      setCurrentQuestionIndex(nextIndex);
+      setCurrentQuestion(allQuizQuestions[nextIndex]);
+      setQuizAnswer('');
+      setShowQuizAnswer(false);
+      setCardStartTime(Date.now()); // Reset timer for next question
       setIsRatingInProgress(false);
+
+      // Submit previous answer in background (non-blocking)
+      submitQuizAnswerInBackground(questionData, answerData, isCorrect);
+
+      // Preload more questions when we're getting close to the end (5 questions remaining)
+      const questionsRemaining = allQuizQuestions.length - nextIndex;
+      if (questionsRemaining <= 5 && !preloadingNextBatch) {
+        preloadNextQuestionBatch();
+      }
+    } else {
+      // Need to fetch more questions - this requires waiting
+      const fetchAndContinue = async () => {
+        try {
+          // Submit current answer first
+          await submitQuizAnswerInBackground(questionData, answerData, isCorrect);
+
+          // Then fetch more questions
+          await fetchAllQuizQuestions();
+        } catch (error) {
+          console.error('Error in fetch and continue:', error);
+          // Try to fetch questions even if submission failed
+          await fetchAllQuizQuestions();
+        } finally {
+          setIsRatingInProgress(false);
+        }
+      };
+
+      fetchAndContinue();
     }
   };
 
   // Keyboard shortcuts
   const handleKeyPress = useCallback((event) => {
-    if (showSessionEnd || isRatingInProgress) return;
+    if (showSessionEnd || isRatingInProgress) {
+      return;
+    }
 
     // Prevent default for all our shortcuts
-    const shortcuts = ['Space', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyS', 'Escape', 'Slash'];
+    const shortcuts = ['Space', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'F1', 'F2', 'F3', 'F4', 'Enter', 'KeyS', 'KeyE', 'Escape'];
     if (shortcuts.includes(event.code)) {
       event.preventDefault();
     }
 
-    // Global shortcuts
-    if (event.code === 'Slash' && event.shiftKey) { // ? key
+    // Global shortcuts - E key for shortcuts
+    if (event.code === 'KeyE') {
       setShowShortcutsHelp(!showShortcutsHelp);
       return;
     }
@@ -301,6 +339,33 @@ const Study = () => {
           }
         }
         break;
+
+      // F1, F2, F3 keys for flashcard ratings only
+      case 'F1':
+        if (studyMode === 'flashcard') {
+          handleCardRating(2);  // Map F1 to Hard (rating 2)
+        }
+        break;
+
+      case 'F2':
+        if (studyMode === 'flashcard') {
+          handleCardRating(3);  // Map F2 to Good (rating 3)
+        }
+        break;
+
+      case 'F3':
+        if (studyMode === 'flashcard') {
+          handleCardRating(4);  // Map F3 to Easy (rating 4)
+        }
+        break;
+
+      case 'F4':
+        if (studyMode === 'quiz' && currentQuestion && !showQuizAnswer) {
+          if (currentQuestion.options && currentQuestion.options.length > 3) {
+            handleQuizAnswer(currentQuestion.options[3]);
+          }
+        }
+        break;
       case 'Enter':
         if (studyMode === 'quiz' && showQuizAnswer) {
           handleQuizNext();
@@ -317,7 +382,7 @@ const Study = () => {
         }
         break;
     }
-  }, [isFlipped, showSessionEnd, showShortcutsHelp]);
+  }, [isFlipped, showSessionEnd, showShortcutsHelp, isRatingInProgress, studyMode, showQuizAnswer, currentQuestion, quizAnswer]);
 
   useKeyboardShortcuts(handleKeyPress);
 
@@ -619,7 +684,7 @@ const Study = () => {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-4">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  Study Session
+                  Study
                 </h1>
 
                 {/* Mode Toggle */}
@@ -759,6 +824,12 @@ const Study = () => {
                 <div className="flex items-center space-x-1 text-purple-600 dark:text-purple-400">
                   <span className="text-xs">Review in: {10 - (studyStats.cardsStudied % 10)} cards</span>
                 </div>
+                {preloadingNextBatch && (
+                  <div className="flex items-center space-x-1 text-blue-500 dark:text-blue-400">
+                    <div className="animate-spin h-3 w-3 border border-current border-t-transparent rounded-full"></div>
+                    <span className="text-xs">Loading more...</span>
+                  </div>
+                )}
                 <div className="flex items-center space-x-1">
                   <BarChart3 className="h-4 w-4" />
                   <span>
@@ -780,7 +851,7 @@ const Study = () => {
               <button
                 onClick={() => setShowShortcutsHelp(true)}
                 className="p-2 text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400"
-                title="Show Keyboard Shortcuts (?)"
+                title="Show Keyboard Shortcuts (E)"
               >
                 <HelpCircle className="h-5 w-5" />
               </button>
@@ -846,11 +917,23 @@ const Study = () => {
 
             {/* Help hint */}
             <div className="text-center text-gray-500 dark:text-gray-400 text-sm">
-              Press <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">?</kbd> for keyboard shortcuts
+              Press <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">E</kbd> or{' '}
+              <button
+                onClick={() => setShowShortcutsHelp(true)}
+                className="underline hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                click here
+              </button> for keyboard shortcuts
               {studyMode === 'quiz' && (
                 <span className="ml-4">
                   • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1-4</kbd> to select options
                   • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space/Enter</kbd> to continue
+                </span>
+              )}
+              {studyMode === 'flashcard' && (
+                <span className="ml-4">
+                  • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">F1-F3</kbd> for rating
+                  • <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space</kbd> to flip
                 </span>
               )}
             </div>
@@ -897,15 +980,39 @@ const Study = () => {
                 )}
                 <div className="flex justify-between">
                   <span>Hard:</span>
-                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd>
+                  <span><kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">F1</kbd> or <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd></span>
                 </div>
                 <div className="flex justify-between">
                   <span>Good:</span>
-                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">2</kbd>
+                  <span><kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">F2</kbd> or <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">2</kbd></span>
                 </div>
                 <div className="flex justify-between">
                   <span>Easy:</span>
+                  <span><kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">F3</kbd> or <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">3</kbd></span>
+                </div>
+
+                <h4 className="font-medium text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-1 mt-4">
+                  Quiz Mode
+                </h4>
+                <div className="flex justify-between">
+                  <span>Select option 1:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">1</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Select option 2:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">2</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Select option 3:</span>
                   <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">3</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Select option 4:</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">4</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>Continue (after answer):</span>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Space/Enter</kbd>
                 </div>
 
                 <h4 className="font-medium text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-600 pb-1 mt-4">
@@ -925,7 +1032,7 @@ const Study = () => {
                 </div>
                 <div className="flex justify-between">
                   <span>Show shortcuts:</span>
-                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">?</kbd>
+                  <kbd className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">E</kbd>
                 </div>
               </div>
             </div>

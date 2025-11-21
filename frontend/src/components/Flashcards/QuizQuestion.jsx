@@ -223,17 +223,11 @@ const QuizQuestion = ({ question, onAnswer, showAnswer, onNext }) => {
             disabled={isProcessing}
             className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
           >
-            {isProcessing ? 'Processing...' : 'Continue (Press any number key or space)'}
+            {isProcessing ? 'Processing...' : 'Continue'}
           </button>
         </div>
       )}
 
-      {/* Keyboard Hints */}
-      {!showAnswer && question.options && (
-        <div className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
-          Press 1-{question.options.length} to select an option
-        </div>
-      )}
     </div>
   );
 };

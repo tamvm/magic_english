@@ -17,7 +17,7 @@ export const useFlashcards = () => {
 
   // Fetch more cards when needed (for pre-loading)
   const fetchMoreCards = async () => {
-    if (isPreloading) return; // Prevent concurrent fetches
+    if (isPreloading) return []; // Prevent concurrent fetches
 
     try {
       setIsPreloading(true);
