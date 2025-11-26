@@ -1,10 +1,12 @@
 import express from "express";
 import { authMiddleware } from "../middleware/auth.js";
 import { FSRS, RATING, CARD_STATE } from "../services/fsrs.js";
+import { QuizFSRS, QUIZ_RESPONSE } from "../services/quizFsrs.js";
 import { quizService } from "../services/quizService.js";
 
 const router = express.Router();
 const fsrs = new FSRS();
+const quizFsrs = new QuizFSRS();
 
 // Apply authentication middleware to all routes
 router.use(authMiddleware);
@@ -461,7 +463,7 @@ router.get("/:cardId/quiz", async (req, res) => {
 
 /**
  * POST /api/flashcards/quiz/:questionId/answer
- * Submit an answer to a quiz question with simplified spaced repetition
+ * Submit an answer to a quiz question with FSRS exponential spaced repetition
  */
 router.post("/quiz/:questionId/answer", async (req, res) => {
   try {
@@ -469,7 +471,7 @@ router.post("/quiz/:questionId/answer", async (req, res) => {
     const { userAnswer, responseTime, cardId } = req.body;
     const userId = req.user.id;
 
-    // Get the question
+    // Get the question with current FSRS data
     const { data: question, error: questionError } = await req.supabase
       .from("quiz_questions")
       .select("*")
@@ -527,6 +529,10 @@ router.post("/quiz/:questionId/answer", async (req, res) => {
       }
     }
 
+    // Calculate new FSRS parameters
+    const reviewDate = new Date();
+    const newParams = quizFsrs.schedule(question, isCorrect, responseTime || 5000, reviewDate);
+
     // Record the attempt
     const { error: attemptError } = await req.supabase
       .from("quiz_attempts")
@@ -544,7 +550,7 @@ router.post("/quiz/:questionId/answer", async (req, res) => {
       // Don't fail the request, just log the error
     }
 
-    // Update question usage statistics
+    // Update question with new FSRS parameters and legacy statistics
     const newUsageCount = question.usage_count + 1;
     const newSuccessRate =
       question.usage_count > 0
@@ -554,23 +560,61 @@ router.post("/quiz/:questionId/answer", async (req, res) => {
           ? 1
           : 0;
 
-    await req.supabase
+    const { error: updateError } = await req.supabase
       .from("quiz_questions")
       .update({
+        // Legacy fields (for backwards compatibility)
         usage_count: newUsageCount,
         success_rate: newSuccessRate,
+
+        // New FSRS fields
+        stability: newParams.stability,
+        difficulty: newParams.difficulty,
+        total_attempts: newParams.total_attempts,
+        correct_attempts: newParams.correct_attempts,
+        interval_days: newParams.interval_days,
+        due_date: newParams.due_date.toISOString(),
+        last_review: newParams.last_review.toISOString(),
+        avg_response_time: newParams.avg_response_time,
       })
       .eq("id", questionId);
+
+    if (updateError) {
+      console.error("Error updating quiz question FSRS data:", updateError);
+      // Continue anyway - the attempt was recorded
+    }
+
+    // Get next intervals for different response qualities (for UI feedback)
+    const nextIntervals = quizFsrs.getNextIntervals({
+      ...question,
+      ...newParams
+    });
 
     res.json({
       isCorrect,
       correctAnswer: question.correct_answer,
       explanation: question.explanation,
       userAnswer,
+      fsrs: {
+        // Detailed FSRS information
+        stability: newParams.stability,
+        difficulty: newParams.difficulty,
+        interval_days: newParams.interval_days,
+        due_date: newParams.due_date,
+        response_quality: newParams.response_quality,
+        success_rate: newParams.success_rate,
+        next_intervals: nextIntervals
+      },
       spaced_repetition: {
-        // Simplified spaced repetition info
-        will_repeat_soon: !isCorrect,
+        // Legacy simple info for backwards compatibility
+        will_repeat_soon: newParams.interval_days < 1,
         priority: isCorrect ? "low" : "high",
+        next_review: newParams.due_date,
+        interval_description: newParams.interval_days < 1
+          ? `${Math.round(newParams.interval_days * 24)} hours`
+          : newParams.interval_days < 7
+          ? `${Math.round(newParams.interval_days)} days`
+          : `${Math.round(newParams.interval_days / 7)} weeks`
       },
     });
   } catch (error) {
@@ -810,7 +854,7 @@ router.delete("/quiz-questions/:questionId", async (req, res) => {
 
 /**
  * GET /api/flashcards/quiz-questions
- * Get quiz questions due for review with spaced repetition
+ * Get quiz questions due for review with FSRS exponential spaced repetition
  */
 router.get("/quiz-questions", async (req, res) => {
   try {
@@ -821,14 +865,14 @@ router.get("/quiz-questions", async (req, res) => {
       `Fetching quiz questions for user ${userId}, limit: ${limit}, includeNew: ${includeNew}`
     );
 
-    const now = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
 
-    // Get quiz questions with their latest attempt status
-    const { data: questionsWithAttempts, error: questionsError } =
-      await req.supabase
-        .from("quiz_questions")
-        .select(
-          `
+    // Build query to get quiz questions due for review using FSRS
+    let query = req.supabase
+      .from("quiz_questions")
+      .select(
+        `
         *,
         words!inner(
           id,
@@ -841,129 +885,125 @@ router.get("/quiz-questions", async (req, res) => {
           synonyms
         )
       `
-        )
-        .eq("words.user_id", userId);
+      )
+      .eq("words.user_id", userId);
+
+    // Filter by due date for questions that have been reviewed before
+    // Include questions that are due now OR new questions (no due_date set)
+    if (includeNew === "true" || includeNew === true) {
+      query = query.or(`due_date.lte.${nowIso},due_date.is.null`);
+    } else {
+      query = query.lte("due_date", nowIso);
+    }
+
+    const { data: questions, error: questionsError } = await query
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .limit(parseInt(limit) * 2); // Fetch more than needed for better selection
 
     if (questionsError) {
-      console.error(
-        "Error fetching quiz questions with cards:",
-        questionsError
-      );
+      console.error("Error fetching quiz questions:", questionsError);
       return res.status(500).json({ error: "Failed to fetch quiz questions" });
     }
 
-    // Get recent quiz attempts for these questions to implement simplified spaced repetition
-    let questionsWithRecentAttempts = [];
-
-    if (questionsWithAttempts && questionsWithAttempts.length > 0) {
-      const questionIds = questionsWithAttempts.map((q) => q.id);
-
-      // Get the most recent attempt for each question by this user
-      const { data: recentAttempts, error: attemptsError } = await req.supabase
-        .from("quiz_attempts")
-        .select("question_id, is_correct, created_at")
-        .eq("user_id", userId)
-        .in("question_id", questionIds)
-        .order("created_at", { ascending: false });
-
-      if (attemptsError) {
-        console.error("Error fetching quiz attempts:", attemptsError);
-      }
-
-      // Group attempts by question_id (most recent first due to ordering)
-      const attemptsByQuestion = {};
-      recentAttempts?.forEach((attempt) => {
-        if (!attemptsByQuestion[attempt.question_id]) {
-          attemptsByQuestion[attempt.question_id] = attempt;
-        }
+    if (!questions || questions.length === 0) {
+      console.log("No quiz questions found");
+      return res.json({
+        questions: [],
+        total: 0,
+        returned: 0,
       });
-
-      // Filter and prioritize questions based on attempts
-      const now = new Date();
-      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-      for (const question of questionsWithAttempts) {
-        const lastAttempt = attemptsByQuestion[question.id];
-
-        if (!lastAttempt) {
-          // New question - include if includeNew is true
-          if (includeNew === "true" || includeNew === true) {
-            questionsWithRecentAttempts.push({
-              ...question,
-              is_new: true,
-              priority: 3, // Medium priority for new questions
-              last_attempt: null,
-            });
-          }
-        } else {
-          // Question has been attempted before
-          const attemptDate = new Date(lastAttempt.created_at);
-
-          if (!lastAttempt.is_correct) {
-            // Wrong answer - high priority, always include
-            questionsWithRecentAttempts.push({
-              ...question,
-              is_new: false,
-              priority: 1, // Highest priority for wrong answers
-              last_attempt: lastAttempt,
-            });
-          } else {
-            // Correct answer - include based on time passed
-            if (attemptDate < oneDayAgo) {
-              questionsWithRecentAttempts.push({
-                ...question,
-                is_new: false,
-                priority: 5, // Lower priority for old correct answers
-                last_attempt: lastAttempt,
-              });
-            }
-            // Skip recent correct answers (spaced repetition)
-          }
-        }
-      }
     }
 
-    // Sort by priority (lower number = higher priority)
-    questionsWithRecentAttempts.sort((a, b) => {
+    // Process questions with FSRS prioritization
+    const processedQuestions = questions.map((question) => {
+      const isDue = quizFsrs.isDue(question, now);
+      const isNew = !question.due_date || !question.last_review;
+
+      // Calculate priority based on FSRS parameters
+      let priority;
+      if (isNew) {
+        priority = 3; // Medium priority for new questions
+      } else if (!isDue) {
+        priority = 10; // Very low priority for not-due questions (shouldn't appear with current query)
+      } else {
+        // Priority based on difficulty and how overdue the question is
+        const hoursOverdue = question.due_date
+          ? Math.max(0, (now - new Date(question.due_date)) / (1000 * 60 * 60))
+          : 0;
+        const difficulty = question.difficulty || 5;
+
+        // Higher difficulty and more overdue = higher priority
+        // Priority scale: 1 (highest) to 9 (lowest)
+        priority = Math.max(1, Math.min(9, Math.round(10 - difficulty - hoursOverdue / 24)));
+      }
+
+      return {
+        ...question,
+        is_new: isNew,
+        is_due: isDue,
+        priority: priority,
+        hours_overdue: question.due_date
+          ? Math.max(0, (now - new Date(question.due_date)) / (1000 * 60 * 60))
+          : 0
+      };
+    })
+    .filter(q => q.is_due || q.is_new) // Only include due or new questions
+    .sort((a, b) => {
+      // Sort by priority first (lower number = higher priority)
       if (a.priority !== b.priority) {
         return a.priority - b.priority;
       }
-      // Same priority - sort by last attempt date (older first)
-      if (a.last_attempt && b.last_attempt) {
-        return (
-          new Date(a.last_attempt.created_at) -
-          new Date(b.last_attempt.created_at)
-        );
+
+      // Then by how overdue they are (more overdue first)
+      if (a.hours_overdue !== b.hours_overdue) {
+        return b.hours_overdue - a.hours_overdue;
       }
-      return 0;
+
+      // Finally by difficulty (harder questions first)
+      return (b.difficulty || 5) - (a.difficulty || 5);
     });
 
-    let dueQuestions = questionsWithRecentAttempts;
-
-    console.log(`After filtering: ${dueQuestions.length} due questions`);
+    console.log(`Found ${questions.length} total questions, ${processedQuestions.length} are due`);
 
     // Limit results
-    const limitedQuestions = dueQuestions.slice(0, parseInt(limit));
+    const limitedQuestions = processedQuestions.slice(0, parseInt(limit));
 
-    // Shuffle options for questions
+    // Shuffle options for questions and add FSRS info
     const questionsWithShuffledOptions = limitedQuestions.map((q) => {
+      const questionWithShuffled = {
+        ...q,
+        fsrs_info: {
+          stability: q.stability || 1,
+          difficulty: q.difficulty || 5,
+          interval_days: q.interval_days || 1,
+          due_date: q.due_date,
+          success_rate: q.success_rate || 0,
+          total_attempts: q.total_attempts || 0
+        }
+      };
+
       if (q.options && Array.isArray(q.options)) {
         return {
-          ...q,
+          ...questionWithShuffled,
           options: quizService.shuffleArray(q.options),
         };
       }
-      return q;
+      return questionWithShuffled;
     });
 
     console.log(
-      `Returning ${questionsWithShuffledOptions.length} quiz questions`
+      `Returning ${questionsWithShuffledOptions.length} quiz questions (FSRS-scheduled)`
     );
 
     res.json({
       questions: questionsWithShuffledOptions,
-      total: dueQuestions.length,
+      total: processedQuestions.length,
       returned: questionsWithShuffledOptions.length,
+      fsrs_info: {
+        new_questions: processedQuestions.filter(q => q.is_new).length,
+        overdue_questions: processedQuestions.filter(q => q.hours_overdue > 0).length,
+        avg_interval: processedQuestions.reduce((sum, q) => sum + (q.interval_days || 1), 0) / processedQuestions.length
+      }
     });
   } catch (error) {
     console.error("Quiz questions endpoint error:", error);

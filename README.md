@@ -177,20 +177,26 @@ VITE_API_URL=https://your-backend-domain.com/api
 
 ```
 magic_english/
-├── backend/                 # Node.js API server
+├── README.md              # Main project overview
+├── CLAUDE.md              # Claude Code configuration
+├── docs/                  # 📚 Detailed documentation
+│   ├── RAILWAY_DEPLOYMENT.md
+│   ├── QUIZ_FSRS_IMPLEMENTATION.md
+│   └── ...
+├── backend/               # Node.js API server
 │   ├── src/
-│   │   ├── routes/         # API routes
-│   │   ├── services/       # Business logic
-│   │   ├── middleware/     # Express middleware
-│   │   └── config/         # Configuration
-│   └── sql/               # Database migrations
-├── frontend/              # React application
+│   │   ├── routes/       # API routes
+│   │   ├── services/     # Business logic
+│   │   ├── middleware/   # Express middleware
+│   │   └── config/       # Configuration
+│   └── sql/              # Database migrations
+├── frontend/             # React application
 │   ├── src/
-│   │   ├── components/    # Reusable components
-│   │   ├── pages/         # Page components
-│   │   ├── contexts/      # React contexts
-│   │   └── lib/           # Utilities and API
-└── package.json          # Workspace configuration
+│   │   ├── components/   # Reusable components
+│   │   ├── pages/        # Page components
+│   │   ├── contexts/     # React contexts
+│   │   └── lib/          # Utilities and API
+└── package.json         # Workspace configuration
 ```
 
 ### Available Scripts
@@ -279,12 +285,26 @@ Supports multiple AI providers:
 - Review error logs in browser console and server logs
 - Verify all environment variables are set correctly
 
+## 📚 Documentation
+
+For detailed documentation on specific topics, see the [docs/](docs/) folder:
+
+- **[Deployment Guide](docs/RAILWAY_DEPLOYMENT.md)** - Deploy to Railway platform
+- **[GitHub Setup](docs/GITHUB_SETUP.md)** - Repository and CI/CD setup
+- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Database migrations
+- **[Quiz FSRS Implementation](docs/QUIZ_FSRS_IMPLEMENTATION.md)** - Advanced spaced repetition
+- **[Contributing Guidelines](docs/CONTRIBUTING.md)** - Development guidelines
+- **[Release Notes](docs/RELEASE.md)** - Version history and features
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the original LICENSE.txt file for details.
 
 ## 🤝 Contributing
 
+We welcome contributions! Please see our [Contributing Guidelines](docs/CONTRIBUTING.md) for detailed information.
+
+Quick steps:
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
 3. Commit your changes: `git commit -m 'Add amazing feature'`
