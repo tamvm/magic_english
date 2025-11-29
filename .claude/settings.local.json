@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm start)",
+      "Bash(npm uninstall:*)",
+      "Bash(pkill:*)",
+      "Bash(curl:*)",
+      "Bash(kill:*)",
+      "Bash(node:*)",
+      "Bash(lsof:*)",
+      "Bash(rm:*)",
+      "Bash(xargs kill:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 5s npm start)",
+      "Bash(timeout 10s npm start)",
+      "Read(//Users/tomtom/code/me/test/**)",
+      "Bash(npm run build:*)",
+      "Bash(timeout 10s npm run dev)",
+      "Bash(npm run lint)",
+      "Bash(npm run:*)",
+      "Bash(pgrep:*)",
+      "Bash(chmod:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh repo view:*)",
+      "Bash(ssh-add:*)",
+      "Bash(ssh:*)",
+      "Read(//Users/tomtom/.ssh/**)",
+      "Bash(gh ssh-key:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(awk:*)",
+      "Bash(xargs -r kill -9)",
+      "Bash(python3 -m pip show:*)",
+      "Bash(python3:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
