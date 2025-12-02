@@ -19,7 +19,7 @@ const upload = multer({
     if (fileProcessingService.isValidFileType(file)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only TXT, PDF, and DOCX files are allowed.'), false);
+      cb(new Error('Invalid file type. Only TXT, PDF, DOCX, and SRT files are allowed.'), false);
     }
   },
 });

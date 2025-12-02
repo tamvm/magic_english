@@ -617,7 +617,7 @@ const Vocabulary = () => {
                     <div className="relative">
                       <input
                         type="file"
-                        accept=".txt,.pdf,.docx"
+                        accept=".txt,.pdf,.docx,.srt"
                         onChange={(e) => {
                           const file = e.target.files[0]
                           if (file) {
@@ -662,7 +662,7 @@ const Vocabulary = () => {
                                 <span className="font-semibold">Click to upload</span> or drag and drop
                               </p>
                               <p className="text-xs text-gray-500 dark:text-gray-400">
-                                TXT, PDF, DOCX (max 5MB)
+                                TXT, PDF, DOCX, SRT (max 5MB)
                               </p>
                             </>
                           )}
@@ -670,7 +670,7 @@ const Vocabulary = () => {
                       </label>
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Upload a document to extract vocabulary suitable for your level
+                      Upload a document or subtitle file to extract vocabulary suitable for your level
                     </p>
                   </div>
                 )}

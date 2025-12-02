@@ -27,6 +27,8 @@ class FileProcessingService {
         return await this.processPdfFile(file);
       case 'docx':
         return await this.processDocxFile(file);
+      case 'srt':
+        return await this.processSrtFile(file);
       default:
         throw new Error(`Unsupported file type: ${fileExtension}`);
     }
@@ -161,17 +163,84 @@ class FileProcessingService {
     return text.trim().split(/\s+/).filter(word => word.length > 0).length;
   }
 
+  async processSrtFile(file) {
+    try {
+      const content = file.buffer.toString('utf-8');
+
+      if (!content || content.trim().length < 50) {
+        throw new Error('SRT file content is too short to analyze (minimum 50 characters)');
+      }
+
+      // Parse SRT content to extract subtitle text
+      const subtitleText = this.parseSrtContent(content);
+
+      if (!subtitleText || subtitleText.trim().length < 100) {
+        throw new Error('SRT file contains insufficient text content (minimum 100 characters)');
+      }
+
+      return {
+        content: subtitleText,
+        title: this.generateTitleFromFilename(file.originalname),
+        excerpt: this.generateExcerpt(subtitleText),
+        wordCount: this.countWords(subtitleText),
+        fileType: 'srt'
+      };
+    } catch (error) {
+      throw new Error(`Failed to process SRT file: ${error.message}`);
+    }
+  }
+
+  parseSrtContent(srtContent) {
+    if (!srtContent) return '';
+
+    // Split by double newlines to get subtitle blocks
+    const blocks = srtContent.split(/\n\s*\n/);
+    const subtitleTexts = [];
+
+    for (const block of blocks) {
+      const lines = block.trim().split('\n');
+
+      // Skip if block doesn't have at least 3 lines (index, timestamp, text)
+      if (lines.length < 3) continue;
+
+      // Skip first line (index) and second line (timestamp)
+      // Collect all remaining lines as subtitle text
+      const textLines = lines.slice(2);
+      const subtitleText = textLines.join(' ').trim();
+
+      if (subtitleText) {
+        // Remove HTML tags that might be in subtitles
+        const cleanText = subtitleText.replace(/<[^>]*>/g, '').trim();
+        if (cleanText) {
+          subtitleTexts.push(cleanText);
+        }
+      }
+    }
+
+    // Join all subtitle texts with spaces
+    return subtitleTexts.join(' ').trim();
+  }
+
   // Validate file type based on mimetype and extension
   isValidFileType(file) {
-    const allowedExtensions = ['txt', 'pdf', 'docx'];
+    const allowedExtensions = ['txt', 'pdf', 'docx', 'srt'];
     const allowedMimeTypes = [
       'text/plain',
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/srt', // SRT files sometimes use this MIME type
+      'application/x-subrip' // Alternative MIME type for SRT files
     ];
 
     const extension = this.getFileExtension(file.originalname);
     const isValidExtension = allowedExtensions.includes(extension.toLowerCase());
+
+    // For SRT files, we're more lenient with MIME type validation since SRT files
+    // are often served with different MIME types (text/plain, text/srt, etc.)
+    if (extension.toLowerCase() === 'srt') {
+      return true;
+    }
+
     const isValidMimeType = allowedMimeTypes.includes(file.mimetype);
 
     return isValidExtension && isValidMimeType;
