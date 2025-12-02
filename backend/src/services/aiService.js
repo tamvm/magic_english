@@ -131,13 +131,11 @@ Ensure the response is valid JSON only, without any additional text or explanati
     }
   }
 
-  async analyzeWebsiteContent(content, userCefrLevel = 'B2', options = {}) {
-    const { limit = 20 } = options;
-
-    if (!content || typeof content !== 'string') {
-      throw new Error('Content must be a non-empty string');
-    }
-
+  /**
+   * Analyze a chunk of content and extract vocabulary
+   * @private
+   */
+  async analyzeContentChunk(contentChunk, userCefrLevel, itemsPerChunk) {
     const prompt = `You are an experienced English teacher.
 My English level: ${userCefrLevel} (CEFR).
 Analyze the content below and extract terms or expressions I probably don't know, to help me expand my English vocabulary.
@@ -152,10 +150,10 @@ Exclude: proper names (people, places, brands, organizations)
 
 Content to analyze:
 """
-${content.substring(0, 8000)} ${content.length > 8000 ? '...' : ''}
+${contentChunk}
 """
 
-Return a JSON array of vocabulary items (maximum ${limit} items), each with:
+Return a JSON array of vocabulary items (maximum ${itemsPerChunk} items), each with:
 {
   "word": "vocabulary item or phrase",
   "definition": "clear English definition",
@@ -171,60 +169,277 @@ Return a JSON array of vocabulary items (maximum ${limit} items), each with:
 
 Provide only valid JSON array without additional text. Focus on words that are challenging but learnable for a ${userCefrLevel} level student.`;
 
-    try {
-      const response = await this.makeRequest('chat/completions', {
-        model: this.config.model,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }, {
-        timeout: 120000, // 2 minutes timeout for website analysis
-      });
+    const response = await this.makeRequest('chat/completions', {
+      model: this.config.model,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 4000,
+    }, {
+      timeout: 120000, // 2 minutes timeout
+    });
 
-      if (response.choices && response.choices[0]) {
-        let content = response.choices[0].message.content;
+    if (response.choices && response.choices[0]) {
+      let content = response.choices[0].message.content;
 
-        // Clean up the response - remove markdown code blocks if present
-        content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+      // Clean up the response - remove markdown code blocks if present
+      content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
 
-        try {
-          const vocabulary = JSON.parse(content);
+      try {
+        const vocabulary = JSON.parse(content);
 
-          // Validate that it's an array
-          if (!Array.isArray(vocabulary)) {
-            throw new Error('Response is not an array');
-          }
+        // Validate that it's an array
+        if (!Array.isArray(vocabulary)) {
+          throw new Error('Response is not an array');
+        }
 
-          // Validate each item and apply limits
-          const validatedVocabulary = vocabulary
-            .slice(0, limit)
-            .map(item => ({
-              word: item.word || '',
-              definition: item.definition || '',
-              wordType: item.wordType || 'unknown',
-              cefrLevel: item.cefrLevel || 'B2',
-              ipaPronunciation: item.ipaPronunciation || '',
-              exampleSentence: item.exampleSentence || '',
-              vietnameseTranslation: item.vietnameseTranslation || '',
-              synonyms: item.synonyms || '',
-              notes: item.notes || '',
-              tags: Array.isArray(item.tags) ? item.tags : []
-            }))
-            .filter(item => item.word && item.definition);
+        // Validate each item
+        const validatedVocabulary = vocabulary
+          .map(item => ({
+            word: item.word || '',
+            definition: item.definition || '',
+            wordType: item.wordType || 'unknown',
+            cefrLevel: item.cefrLevel || 'B2',
+            ipaPronunciation: item.ipaPronunciation || '',
+            exampleSentence: item.exampleSentence || '',
+            vietnameseTranslation: item.vietnameseTranslation || '',
+            synonyms: item.synonyms || '',
+            notes: item.notes || '',
+            tags: Array.isArray(item.tags) ? item.tags : []
+          }))
+          .filter(item => item.word && item.definition);
 
-          return validatedVocabulary;
-        } catch (parseError) {
-          console.error('Failed to parse AI response:', content);
-          throw new Error('Invalid AI response format');
+        return validatedVocabulary;
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', content);
+        throw new Error('Invalid AI response format');
+      }
+    }
+
+    throw new Error('No response from AI service');
+  }
+
+  /**
+   * Split content into overlapping chunks for analysis
+   * @private
+   */
+  splitContentIntoChunks(content, chunkSize = 7000, overlap = 500) {
+    const chunks = [];
+    let start = 0;
+
+    while (start < content.length) {
+      const end = Math.min(start + chunkSize, content.length);
+      let chunk = content.substring(start, end);
+
+      // Try to end at a sentence boundary if possible
+      if (end < content.length) {
+        const lastPeriod = chunk.lastIndexOf('. ');
+        const lastNewline = chunk.lastIndexOf('\n');
+        const breakPoint = Math.max(lastPeriod, lastNewline);
+
+        if (breakPoint > chunkSize * 0.7) { // Only break if we're past 70% of chunk
+          chunk = content.substring(start, start + breakPoint + 1);
         }
       }
 
-      throw new Error('No response from AI service');
+      chunks.push(chunk.trim());
+
+      // Move start position with overlap
+      start += chunk.length - overlap;
+
+      // Prevent infinite loop if chunk is too small
+      if (chunk.length < overlap) {
+        start = end;
+      }
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Deduplicate vocabulary items based on word (case-insensitive)
+   * Keeps the first occurrence of each word
+   * @private
+   */
+  deduplicateVocabulary(vocabularyArray) {
+    const seen = new Map();
+    const deduplicated = [];
+
+    for (const item of vocabularyArray) {
+      const normalizedWord = item.word.toLowerCase().trim();
+
+      if (!seen.has(normalizedWord)) {
+        seen.set(normalizedWord, true);
+        deduplicated.push(item);
+      }
+    }
+
+    return deduplicated;
+  }
+
+  async analyzeWebsiteContent(content, userCefrLevel = 'B2', options = {}) {
+    const { limit = 20, onProgress = null, chunksToProcess = 3, offset = 0 } = options;
+
+    if (!content || typeof content !== 'string') {
+      throw new Error('Content must be a non-empty string');
+    }
+
+    try {
+      const CHUNK_SIZE = 5000; // Characters per chunk (reduced for memory efficiency)
+      const OVERLAP = 300; // Overlap to avoid cutting mid-context
+
+      console.log(`📊 Analyzing content: ${content.length} characters (offset: ${offset}, processing ${chunksToProcess} chunks)`);
+
+      // For small content, use single request
+      if (content.length <= CHUNK_SIZE) {
+        console.log('📝 Content is small, using single-chunk analysis');
+        const vocabulary = await this.analyzeContentChunk(content, userCefrLevel, limit);
+        return {
+          vocabulary: vocabulary.slice(0, limit),
+          hasMore: false,
+          nextOffset: 0,
+          totalChunks: 1,
+          processedChunks: 1
+        };
+      }
+
+      // For large content, use chunked analysis
+      console.log('📚 Content is large, using chunked analysis');
+
+      // Calculate number of chunks without creating them all at once
+      const totalChunks = Math.ceil(content.length / (CHUNK_SIZE - OVERLAP));
+      console.log(`📑 Total chunks: ${totalChunks}, processing chunks ${offset + 1} to ${Math.min(offset + chunksToProcess, totalChunks)}`);
+
+      // Send initial progress if callback provided
+      if (onProgress) {
+        onProgress({
+          type: 'init',
+          totalChunks,
+          currentChunk: offset,
+          percentage: 0
+        });
+      }
+
+      // Calculate items per chunk
+      const itemsPerChunk = Math.ceil(limit / chunksToProcess) + 5; // +5 to account for deduplication
+
+      // Analyze only the requested chunks
+      const results = [];
+      let start = 0;
+      let chunkIndex = 0;
+      const startTime = Date.now();
+
+      // Skip to the offset chunk
+      for (let i = 0; i < offset; i++) {
+        const end = Math.min(start + CHUNK_SIZE, content.length);
+        const chunkLength = end - start;
+        start += chunkLength - OVERLAP;
+      }
+
+      // Process only chunksToProcess chunks starting from offset
+      let processedCount = 0;
+      while (start < content.length && processedCount < chunksToProcess) {
+        chunkIndex = offset + processedCount + 1;
+        const end = Math.min(start + CHUNK_SIZE, content.length);
+        let chunk = content.substring(start, end);
+
+        // Try to end at a sentence boundary if possible
+        if (end < content.length) {
+          const lastPeriod = chunk.lastIndexOf('. ');
+          const lastNewline = chunk.lastIndexOf('\n');
+          const breakPoint = Math.max(lastPeriod, lastNewline);
+
+          if (breakPoint > CHUNK_SIZE * 0.7) {
+            chunk = content.substring(start, start + breakPoint + 1);
+          }
+        }
+
+        console.log(`🔍 Analyzing chunk ${chunkIndex}/${totalChunks} (${chunk.length} chars)`);
+
+        // Calculate estimated time remaining
+        let estimatedTimeRemaining = null;
+        if (processedCount > 0) {
+          const elapsedTime = Date.now() - startTime;
+          const avgTimePerChunk = elapsedTime / processedCount;
+          const remainingChunksThisBatch = chunksToProcess - processedCount;
+          estimatedTimeRemaining = Math.ceil((avgTimePerChunk * remainingChunksThisBatch) / 1000); // in seconds
+        }
+
+        // Send progress update
+        if (onProgress) {
+          onProgress({
+            type: 'progress',
+            totalChunks,
+            currentChunk: chunkIndex,
+            percentage: Math.round((processedCount / chunksToProcess) * 100),
+            status: `Analyzing chunk ${chunkIndex}/${totalChunks}`,
+            estimatedTimeRemaining
+          });
+        }
+
+        try {
+          const chunkResult = await this.analyzeContentChunk(chunk.trim(), userCefrLevel, itemsPerChunk);
+          results.push(chunkResult);
+
+          // Add small delay between chunks to avoid rate limiting
+          if (processedCount < chunksToProcess - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (chunkError) {
+          console.error(`⚠️  Failed to analyze chunk ${chunkIndex}:`, chunkError.message);
+          // Continue with other chunks even if one fails
+        }
+
+        // Move start position with overlap
+        start += CHUNK_SIZE - OVERLAP;
+        processedCount++;
+
+        // Explicitly clear chunk reference for GC
+        chunk = null;
+      }
+
+      console.log(`✅ Batch complete: processed ${processedCount} chunks`);
+
+      // Merge all results
+      let allVocabulary = results.flat();
+      console.log(`📋 Found ${allVocabulary.length} total items before deduplication`);
+
+      // Deduplicate based on word
+      allVocabulary = this.deduplicateVocabulary(allVocabulary);
+      console.log(`🎯 ${allVocabulary.length} unique items after deduplication`);
+
+      // Don't slice by limit for incremental loading - return all found vocabulary
+      const finalVocabulary = allVocabulary;
+      console.log(`✨ Returning ${finalVocabulary.length} vocabulary items`);
+
+      // Calculate next offset and hasMore
+      const nextOffset = offset + processedCount;
+      const hasMore = nextOffset < totalChunks;
+
+      console.log(`📊 Pagination: offset=${offset}, nextOffset=${nextOffset}, hasMore=${hasMore}, total=${totalChunks}`);
+
+      // Send completion progress
+      if (onProgress) {
+        onProgress({
+          type: 'complete',
+          totalChunks,
+          currentChunk: nextOffset,
+          percentage: 100,
+          vocabularyCount: finalVocabulary.length
+        });
+      }
+
+      return {
+        vocabulary: finalVocabulary,
+        hasMore,
+        nextOffset,
+        totalChunks,
+        processedChunks: processedCount
+      };
     } catch (error) {
       console.error('AI website content analysis error:', error);
       throw new Error(`Website analysis failed: ${error.message}`);

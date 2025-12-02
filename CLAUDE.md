@@ -39,3 +39,4 @@ Magic English is an AI-powered vocabulary learning web application built with:
 
 - Use context7 mcp as much as possible for enhanced functionality and capabilities
 - Ask clarifying questions before implementing features to ensure requirements are fully understood
+- **DO NOT** automatically start the backend server - user will start it manually

@@ -21,11 +21,18 @@ const Vocabulary = () => {
   const [analyzingContent, setAnalyzingContent] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState({ step: 0, message: '', percentage: 0 })
   const [vocabularyResults, setVocabularyResults] = useState([])
+  const [vocabularyPages, setVocabularyPages] = useState([])
+  const [currentPage, setCurrentPage] = useState(0)
   const [selectedWords, setSelectedWords] = useState(new Set())
+  const [selectedWordsPerPage, setSelectedWordsPerPage] = useState({})
   const [savingSelected, setSavingSelected] = useState(false)
   const [sourceInfo, setSourceInfo] = useState(null)
   const [originalContent, setOriginalContent] = useState('')
   const [showContentViewer, setShowContentViewer] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [nextOffset, setNextOffset] = useState(0)
+  const [totalChunks, setTotalChunks] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
     loadWords()
@@ -98,10 +105,16 @@ const Vocabulary = () => {
     try {
       setAnalyzingContent(true)
       setVocabularyResults([])
+      setVocabularyPages([])
+      setCurrentPage(0)
       setSelectedWords(new Set())
+      setSelectedWordsPerPage({})
       setSourceInfo(null)
       setOriginalContent('')
       setShowContentViewer(false)
+      setHasMore(false)
+      setNextOffset(0)
+      setTotalChunks(0)
 
       const totalSteps = contentAnalysisMode === 'url' ? 8 : contentAnalysisMode === 'file' ? 7 : 6;
 
@@ -209,10 +222,18 @@ const Vocabulary = () => {
 
       // AI Analysis Step
       const aiStepNumber = contentAnalysisMode === 'url' ? 6 : contentAnalysisMode === 'file' ? 6 : 4;
+
+      // Estimate chunks for large files
+      const isLargeFile = selectedFile && selectedFile.size > 25000; // ~25KB
+      const estimatedChunks = isLargeFile ? Math.ceil(selectedFile.size / 5000) : null;
+
       setAnalysisProgress({
         step: aiStepNumber,
-        message: 'AI analyzing vocabulary for your level...',
-        percentage: Math.round((aiStepNumber/totalSteps) * 100)
+        message: estimatedChunks
+          ? `AI analyzing vocabulary (${estimatedChunks} chunks, ~${Math.ceil(estimatedChunks * 7 / 60)} min)...`
+          : 'AI analyzing vocabulary for your level...',
+        percentage: Math.round((aiStepNumber/totalSteps) * 100),
+        estimatedChunks
       })
 
       const response = await aiAPI.analyzeContent(analysisData)
@@ -235,13 +256,23 @@ const Vocabulary = () => {
 
       if (response.data.vocabulary && response.data.vocabulary.length > 0) {
         setVocabularyResults(response.data.vocabulary)
+        setVocabularyPages([response.data.vocabulary])
+        setCurrentPage(0)
         setSourceInfo(response.data.sourceInfo || null)
         setOriginalContent(response.data.originalContent || '')
+        setHasMore(response.data.hasMore || false)
+        setNextOffset(response.data.nextOffset || 0)
+        setTotalChunks(response.data.totalChunks || 0)
         toast.success(response.data.message || `Found ${response.data.vocabulary.length} vocabulary items`)
       } else {
         setVocabularyResults([])
+        setVocabularyPages([])
+        setCurrentPage(0)
         setSourceInfo(response.data.sourceInfo || null)
         setOriginalContent(response.data.originalContent || '')
+        setHasMore(false)
+        setNextOffset(0)
+        setTotalChunks(0)
         toast.info(response.data.message || 'No new vocabulary found')
       }
     } catch (error) {
@@ -272,52 +303,180 @@ const Vocabulary = () => {
     }
   }
 
-  const toggleWordSelection = (index) => {
-    const newSelectedWords = new Set(selectedWords)
-    if (newSelectedWords.has(index)) {
-      newSelectedWords.delete(index)
-    } else {
-      newSelectedWords.add(index)
+  const loadMoreVocabulary = async () => {
+    if (!hasMore || loadingMore) return
+
+    try {
+      setLoadingMore(true)
+
+      // Prepare data with offset for pagination
+      const analysisData = {}
+      if (contentAnalysisMode === 'url') {
+        analysisData.url = contentUrl.trim()
+        analysisData.offset = nextOffset
+        analysisData.chunksToProcess = 3
+      } else if (contentAnalysisMode === 'file') {
+        const formData = new FormData()
+        formData.append('file', selectedFile)
+        formData.append('offset', nextOffset)
+        formData.append('chunksToProcess', 3)
+        analysisData.file = formData
+      } else {
+        analysisData.text = contentText.trim()
+        analysisData.offset = nextOffset
+        analysisData.chunksToProcess = 3
+      }
+
+      const response = await aiAPI.analyzeContent(analysisData)
+
+      if (response.data.vocabulary && response.data.vocabulary.length > 0) {
+        // Add new vocabulary as a new page
+        setVocabularyPages(prev => [...prev, response.data.vocabulary])
+        setCurrentPage(prev => prev + 1)
+
+        // Update pagination state
+        setHasMore(response.data.hasMore || false)
+        setNextOffset(response.data.nextOffset || 0)
+
+        toast.success(response.data.message || `Loaded ${response.data.vocabulary.length} more vocabulary items`)
+      } else {
+        setHasMore(false)
+        toast.info('No more vocabulary found')
+      }
+    } catch (error) {
+      toast.error('Failed to load more vocabulary')
+      console.error('Load more vocabulary error:', error)
+    } finally {
+      setLoadingMore(false)
     }
-    setSelectedWords(newSelectedWords)
   }
 
-  const selectAllWords = () => {
-    if (selectedWords.size === vocabularyResults.length) {
-      setSelectedWords(new Set())
-    } else {
-      setSelectedWords(new Set(vocabularyResults.map((_, index) => index)))
-    }
-  }
-
-  const saveSelectedWords = async () => {
-    if (selectedWords.size === 0) {
+  const saveSelectedAndLoadMore = async () => {
+    const currentPageSelections = selectedWordsPerPage[currentPage] || new Set()
+    if (currentPageSelections.size === 0) {
       toast.error('Please select at least one word to save')
       return
     }
 
-    const wordsToSave = Array.from(selectedWords).map(index => {
-      const item = vocabularyResults[index]
-      return {
-        word: item.word,
-        definition: item.definition,
-        wordType: item.wordType,
-        cefrLevel: item.cefrLevel,
-        ipaPronunciation: item.ipaPronunciation,
-        exampleSentence: item.exampleSentence,
-        notes: item.notes,
-        tags: item.tags || [],
-        vietnameseTranslation: item.vietnameseTranslation,
-        synonyms: item.synonyms
+    try {
+      // First save the selected words from current page
+      setSavingSelected(true)
+
+      const currentPageData = vocabularyPages[currentPage] || []
+      const wordsToSave = Array.from(currentPageSelections).map(index => {
+        const item = currentPageData[index]
+        return {
+          word: item.word,
+          definition: item.definition,
+          wordType: item.wordType,
+          cefrLevel: item.cefrLevel,
+          ipaPronunciation: item.ipaPronunciation,
+          exampleSentence: item.exampleSentence,
+          notes: item.notes,
+          tags: item.tags || [],
+          vietnameseTranslation: item.vietnameseTranslation,
+          synonyms: item.synonyms
+        }
+      })
+
+      const saveResponse = await wordsAPI.bulkOperation({
+        operation: 'import',
+        words: wordsToSave
+      })
+
+      if (saveResponse.data.words) {
+        setWords(prev => [...saveResponse.data.words, ...prev])
+        toast.success(`${saveResponse.data.words.length} words saved successfully!`)
+
+        // Clear selections for current page
+        setSelectedWordsPerPage(prev => ({
+          ...prev,
+          [currentPage]: new Set()
+        }))
+
+        // Now load more vocabulary
+        setSavingSelected(false)
+        await loadMoreVocabulary()
       }
+    } catch (error) {
+      toast.error('Failed to save selected words')
+      console.error('Save selected words error:', error)
+      setSavingSelected(false)
+    }
+  }
+
+  // Helper functions for pagination
+  const getCurrentPageData = () => {
+    return vocabularyPages[currentPage] || []
+  }
+
+  const getCurrentPageSelections = () => {
+    return selectedWordsPerPage[currentPage] || new Set()
+  }
+
+  const updateCurrentPageSelections = (newSelections) => {
+    setSelectedWordsPerPage(prev => ({
+      ...prev,
+      [currentPage]: newSelections
+    }))
+  }
+
+  const toggleWordSelection = (index) => {
+    const currentSelections = getCurrentPageSelections()
+    const newSelections = new Set(currentSelections)
+    if (newSelections.has(index)) {
+      newSelections.delete(index)
+    } else {
+      newSelections.add(index)
+    }
+    updateCurrentPageSelections(newSelections)
+  }
+
+  const selectAllWordsOnPage = () => {
+    const currentPageData = getCurrentPageData()
+    const currentSelections = getCurrentPageSelections()
+    if (currentSelections.size === currentPageData.length) {
+      updateCurrentPageSelections(new Set())
+    } else {
+      updateCurrentPageSelections(new Set(currentPageData.map((_, index) => index)))
+    }
+  }
+
+  const saveSelectedWords = async () => {
+    // Collect all selected words from all pages
+    let allSelectedWords = []
+    Object.entries(selectedWordsPerPage).forEach(([pageIndex, selections]) => {
+      const pageData = vocabularyPages[parseInt(pageIndex)] || []
+      Array.from(selections).forEach(wordIndex => {
+        const item = pageData[wordIndex]
+        if (item) {
+          allSelectedWords.push({
+            word: item.word,
+            definition: item.definition,
+            wordType: item.wordType,
+            cefrLevel: item.cefrLevel,
+            ipaPronunciation: item.ipaPronunciation,
+            exampleSentence: item.exampleSentence,
+            notes: item.notes,
+            tags: item.tags || [],
+            vietnameseTranslation: item.vietnameseTranslation,
+            synonyms: item.synonyms
+          })
+        }
+      })
     })
+
+    if (allSelectedWords.length === 0) {
+      toast.error('Please select at least one word to save')
+      return
+    }
 
     try {
       setSavingSelected(true)
 
       const response = await wordsAPI.bulkOperation({
         operation: 'import',
-        words: wordsToSave
+        words: allSelectedWords
       })
 
       if (response.data.words) {
@@ -330,10 +489,16 @@ const Vocabulary = () => {
         setContentText('')
         setSelectedFile(null)
         setVocabularyResults([])
+        setVocabularyPages([])
+        setCurrentPage(0)
         setSelectedWords(new Set())
+        setSelectedWordsPerPage({})
         setSourceInfo(null)
         setOriginalContent('')
         setShowContentViewer(false)
+        setHasMore(false)
+        setNextOffset(0)
+        setTotalChunks(0)
       }
     } catch (error) {
       toast.error('Failed to save selected words')
@@ -751,7 +916,7 @@ const Vocabulary = () => {
         )}
 
         {/* Vocabulary Results */}
-        {vocabularyResults.length > 0 && (
+        {vocabularyPages.length > 0 && getCurrentPageData().length > 0 && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300">
               <div className="card-header bg-gradient-to-r from-blue-500 to-purple-600 text-white">
@@ -762,7 +927,7 @@ const Vocabulary = () => {
                     </div>
                     <div>
                       <h3 className="text-xl font-bold">
-                        🎉 Found {vocabularyResults.length} New Vocabulary Items!
+                        🎉 Found {getCurrentPageData().length} New Vocabulary Items {vocabularyPages.length > 1 ? `(Page ${currentPage + 1}/${vocabularyPages.length})` : ''}!
                       </h3>
                       <p className="text-blue-100 text-sm">
                         Select the words you want to add to your vocabulary collection
@@ -801,10 +966,16 @@ const Vocabulary = () => {
                   <button
                     onClick={() => {
                       setVocabularyResults([])
+                      setVocabularyPages([])
+                      setCurrentPage(0)
                       setSelectedWords(new Set())
+                      setSelectedWordsPerPage({})
                       setSourceInfo(null)
                       setOriginalContent('')
                       setShowContentViewer(false)
+                      setHasMore(false)
+                      setNextOffset(0)
+                      setTotalChunks(0)
                     }}
                     className="text-white hover:text-gray-200 p-2"
                   >
@@ -816,11 +987,11 @@ const Vocabulary = () => {
               </div>
 
               <div className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20">
-                <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                   <div className="flex items-center space-x-4">
                     <div className="bg-blue-100 dark:bg-blue-800 px-4 py-2 rounded-full">
                       <span className="text-blue-800 dark:text-blue-200 font-medium">
-                        {selectedWords.size} selected
+                        {getCurrentPageSelections().size} selected on this page
                       </span>
                     </div>
                     <div className="text-gray-600 dark:text-gray-400 text-sm">
@@ -829,14 +1000,14 @@ const Vocabulary = () => {
                   </div>
                   <div className="flex space-x-3">
                     <button
-                      onClick={selectAllWords}
+                      onClick={selectAllWordsOnPage}
                       className="btn-secondary bg-white shadow-md"
                     >
-                      {selectedWords.size === vocabularyResults.length ? 'Deselect All' : 'Select All'}
+                      {getCurrentPageSelections().size === getCurrentPageData().length ? 'Deselect All' : 'Select All'}
                     </button>
                     <button
                       onClick={saveSelectedWords}
-                      disabled={selectedWords.size === 0 || savingSelected}
+                      disabled={Object.values(selectedWordsPerPage).every(set => set.size === 0) || savingSelected}
                       className="btn-primary shadow-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                     >
                       {savingSelected ? (
@@ -847,12 +1018,42 @@ const Vocabulary = () => {
                       ) : (
                         <>
                           <BookOpen className="h-4 w-4 mr-2" />
-                          Save Selected ({selectedWords.size})
+                          Save Selected ({Object.values(selectedWordsPerPage).reduce((total, set) => total + set.size, 0)})
                         </>
                       )}
                     </button>
                   </div>
                 </div>
+
+                {/* Top Pagination Controls */}
+                {vocabularyPages.length > 1 && (
+                  <div className="flex items-center justify-between bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        Page {currentPage + 1} of {vocabularyPages.length}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-500">
+                        ({getCurrentPageData().length} items)
+                      </span>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                        disabled={currentPage === 0}
+                        className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(vocabularyPages.length - 1, prev + 1))}
+                        disabled={currentPage === vocabularyPages.length - 1}
+                        className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 overflow-y-auto">
@@ -864,8 +1065,8 @@ const Vocabulary = () => {
                       <th className="table-header-cell w-12">
                         <input
                           type="checkbox"
-                          checked={selectedWords.size === vocabularyResults.length && vocabularyResults.length > 0}
-                          onChange={selectAllWords}
+                          checked={getCurrentPageSelections().size === getCurrentPageData().length && getCurrentPageData().length > 0}
+                          onChange={selectAllWordsOnPage}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                       </th>
@@ -878,12 +1079,12 @@ const Vocabulary = () => {
                     </tr>
                   </thead>
                   <tbody className="table-body">
-                    {vocabularyResults.map((item, index) => (
-                      <tr key={index} className={selectedWords.has(index) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
+                    {getCurrentPageData().map((item, index) => (
+                      <tr key={index} className={getCurrentPageSelections().has(index) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
                         <td className="table-cell">
                           <input
                             type="checkbox"
-                            checked={selectedWords.has(index)}
+                            checked={getCurrentPageSelections().has(index)}
                             onChange={() => toggleWordSelection(index)}
                             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
@@ -934,6 +1135,62 @@ const Vocabulary = () => {
                     </tbody>
                   </table>
                   </div>
+
+                  {/* Bottom Pagination Controls */}
+                  {vocabularyPages.length > 1 && (
+                    <div className="mt-6 flex items-center justify-between bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Page {currentPage + 1} of {vocabularyPages.length}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-500">
+                          ({getCurrentPageData().length} items)
+                        </span>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                          disabled={currentPage === 0}
+                          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          onClick={() => setCurrentPage(prev => Math.min(vocabularyPages.length - 1, prev + 1))}
+                          disabled={currentPage === vocabularyPages.length - 1}
+                          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Load More Button */}
+                  {hasMore && (
+                    <div className="mt-6 flex flex-col items-center justify-center space-y-3">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Loaded {nextOffset} of {totalChunks} chunks
+                      </div>
+                      <button
+                        onClick={getCurrentPageSelections().size > 0 ? saveSelectedAndLoadMore : loadMoreVocabulary}
+                        disabled={loadingMore || savingSelected}
+                        className="btn-primary shadow-lg bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700"
+                      >
+                        {loadingMore || savingSelected ? (
+                          <>
+                            <LoadingSpinner size="sm" className="mr-2" />
+                            {savingSelected ? 'Saving and Loading More...' : 'Loading More...'}
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            {getCurrentPageSelections().size > 0 ? 'Save Selected and Load More' : 'Load More Vocabulary'}
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

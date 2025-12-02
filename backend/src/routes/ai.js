@@ -171,7 +171,7 @@ router.post('/analyze-content', upload.single('file'), async (req, res, next) =>
       validatedBody = value;
     }
 
-    const { url, text, limit } = validatedBody;
+    const { url, text, limit, offset = 0, chunksToProcess = 3 } = validatedBody;
     const uploadedFile = req.file;
 
     // Get user's CEFR level from profile
@@ -289,28 +289,40 @@ router.post('/analyze-content', upload.single('file'), async (req, res, next) =>
       });
     }
 
-    // Analyze content with AI
-    const vocabulary = await aiService.analyzeWebsiteContent(content, userCefrLevel, { limit });
+    // Analyze content with AI (with pagination support)
+    const result = await aiService.analyzeWebsiteContent(content, userCefrLevel, {
+      limit,
+      offset: parseInt(offset) || 0,
+      chunksToProcess: parseInt(chunksToProcess) || 3
+    });
 
-    if (!vocabulary || vocabulary.length === 0) {
+    if (!result.vocabulary || result.vocabulary.length === 0) {
       return res.json({
         vocabulary: [],
         sourceType,
         sourceInfo,
         userCefrLevel,
-        originalContent: content,
+        originalContent: offset === 0 ? content : undefined, // Only send full content on first request
+        hasMore: result.hasMore || false,
+        nextOffset: result.nextOffset || 0,
+        totalChunks: result.totalChunks || 0,
+        processedChunks: result.processedChunks || 0,
         message: 'No new vocabulary found in the content that matches your current level.'
       });
     }
 
     res.json({
-      vocabulary,
+      vocabulary: result.vocabulary,
       sourceType,
       sourceInfo,
       userCefrLevel,
-      totalFound: vocabulary.length,
-      originalContent: content,
-      message: `Found ${vocabulary.length} vocabulary items for your level (${userCefrLevel})`
+      totalFound: result.vocabulary.length,
+      originalContent: offset === 0 ? content : undefined, // Only send full content on first request
+      hasMore: result.hasMore,
+      nextOffset: result.nextOffset,
+      totalChunks: result.totalChunks,
+      processedChunks: result.processedChunks,
+      message: `Found ${result.vocabulary.length} vocabulary items (chunks ${offset + 1}-${offset + result.processedChunks}/${result.totalChunks})`
     });
 
   } catch (error) {
