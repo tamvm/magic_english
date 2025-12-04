@@ -1,15 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Helmet } from 'react-helmet-async'
+import { useSearchParams } from 'react-router-dom'
 import { Search, Plus, Download, Upload, Sparkles, Edit2, Trash2, BookOpen, Link, FileText, Globe, Type, Play } from 'lucide-react'
 import { wordsAPI, aiAPI } from '@/lib/api'
 import { debounce, getCefrColor, getWordTypeColor, formatDate } from '@/lib/utils'
 import LoadingSpinner from '@/components/UI/LoadingSpinner'
+import GroupFilter from '@/components/GroupFilter'
+import FilterPills from '@/components/FilterPills'
+import GroupSelector from '@/components/GroupSelector'
+import { useGroups } from '@/hooks/useGroups'
 import toast from 'react-hot-toast'
 
 const Vocabulary = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { groups } = useGroups()
+
   const [words, setWords] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedGroups, setSelectedGroups] = useState([])
+  const [dateFilter, setDateFilter] = useState('all') // 'all', 'today', 'week', 'month', '3months'
+  const [selectedWordIds, setSelectedWordIds] = useState(new Set())
+  const [lastSelectedIndex, setLastSelectedIndex] = useState(null)
+  const [showBatchGroupSelector, setShowBatchGroupSelector] = useState(false)
+  const [batchGroupId, setBatchGroupId] = useState(null)
+  const [batchAssigning, setBatchAssigning] = useState(false)
   const [newWord, setNewWord] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -33,16 +48,44 @@ const Vocabulary = () => {
   const [nextOffset, setNextOffset] = useState(0)
   const [totalChunks, setTotalChunks] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [selectedGroupId, setSelectedGroupId] = useState(null)
+  const [isInitialized, setIsInitialized] = useState(false)
 
+  // Initialize selectedGroups from URL on mount
   useEffect(() => {
-    loadWords()
+    const groupsParam = searchParams.get('groups')
+    if (groupsParam) {
+      setSelectedGroups(groupsParam.split(','))
+    }
+    setIsInitialized(true)
   }, [])
+
+  // Update URL when selectedGroups changes (skip on initial mount)
+  useEffect(() => {
+    if (!isInitialized) return
+
+    const params = new URLSearchParams(searchParams)
+    if (selectedGroups.length > 0) {
+      params.set('groups', selectedGroups.join(','))
+    } else {
+      params.delete('groups')
+    }
+    setSearchParams(params, { replace: true })
+  }, [selectedGroups, isInitialized])
+
+  // Load words when selectedGroups changes (only after initialization)
+  useEffect(() => {
+    if (!isInitialized) return
+    loadWords()
+  }, [selectedGroups, isInitialized])
 
   const loadWords = async () => {
     try {
       setLoading(true)
-      const response = await wordsAPI.getWords()
-      setWords(response.data.words || [])
+      const response = await wordsAPI.getAll({
+        groups: selectedGroups.length > 0 ? selectedGroups : undefined
+      })
+      setWords(response.words || [])
     } catch (error) {
       toast.error('Failed to load vocabulary')
       console.error('Load words error:', error)
@@ -375,7 +418,8 @@ const Vocabulary = () => {
           notes: item.notes,
           tags: item.tags || [],
           vietnameseTranslation: item.vietnameseTranslation,
-          synonyms: item.synonyms
+          synonyms: item.synonyms,
+          groupId: selectedGroupId
         }
       })
 
@@ -386,7 +430,17 @@ const Vocabulary = () => {
 
       if (saveResponse.data.words) {
         setWords(prev => [...saveResponse.data.words, ...prev])
-        toast.success(`${saveResponse.data.words.length} words saved successfully!`)
+
+        // Get group name for success message
+        const groupName = selectedGroupId
+          ? groups.find(g => g.id === selectedGroupId)?.name
+          : null
+
+        const successMessage = groupName
+          ? `Added ${saveResponse.data.words.length} words to "${groupName}"!`
+          : `${saveResponse.data.words.length} words saved successfully!`
+
+        toast.success(successMessage)
 
         // Clear selections for current page
         setSelectedWordsPerPage(prev => ({
@@ -460,7 +514,8 @@ const Vocabulary = () => {
             notes: item.notes,
             tags: item.tags || [],
             vietnameseTranslation: item.vietnameseTranslation,
-            synonyms: item.synonyms
+            synonyms: item.synonyms,
+            groupId: selectedGroupId
           })
         }
       })
@@ -481,7 +536,17 @@ const Vocabulary = () => {
 
       if (response.data.words) {
         setWords(prev => [...response.data.words, ...prev])
-        toast.success(`${response.data.words.length} words saved successfully! Quiz questions are being generated in the background.`)
+
+        // Get group name for success message
+        const groupName = selectedGroupId
+          ? groups.find(g => g.id === selectedGroupId)?.name
+          : null
+
+        const successMessage = groupName
+          ? `Added ${response.data.words.length} words to "${groupName}"! Quiz questions are being generated in the background.`
+          : `${response.data.words.length} words saved successfully! Quiz questions are being generated in the background.`
+
+        toast.success(successMessage)
 
         // Clear the content form and results
         setShowContentForm(false)
@@ -499,6 +564,7 @@ const Vocabulary = () => {
         setHasMore(false)
         setNextOffset(0)
         setTotalChunks(0)
+        setSelectedGroupId(null)
       }
     } catch (error) {
       toast.error('Failed to save selected words')
@@ -548,6 +614,96 @@ const Vocabulary = () => {
     }
   }
 
+  // Group filter handlers
+  const handleGroupsChange = (newGroups) => {
+    setSelectedGroups(newGroups)
+  }
+
+  const handleRemoveGroup = (groupId) => {
+    setSelectedGroups(selectedGroups.filter(id => id !== groupId))
+  }
+
+  const handleClearAllFilters = () => {
+    setSelectedGroups([])
+    setDateFilter('all')
+  }
+
+  // Word selection handlers
+  const handleToggleWord = (wordId, index, event) => {
+    const newSelected = new Set(selectedWordIds)
+
+    // Shift+click for range selection
+    if (event?.shiftKey && lastSelectedIndex !== null && index !== lastSelectedIndex) {
+      const start = Math.min(lastSelectedIndex, index)
+      const end = Math.max(lastSelectedIndex, index)
+
+      // Select all words in range
+      for (let i = start; i <= end; i++) {
+        if (filteredWords[i]) {
+          newSelected.add(filteredWords[i].id)
+        }
+      }
+      setSelectedWordIds(newSelected)
+      setLastSelectedIndex(index)
+    } else {
+      // Normal toggle
+      if (newSelected.has(wordId)) {
+        newSelected.delete(wordId)
+      } else {
+        newSelected.add(wordId)
+      }
+      setSelectedWordIds(newSelected)
+      setLastSelectedIndex(index)
+    }
+  }
+
+  const handleSelectAll = () => {
+    setSelectedWordIds(new Set(filteredWords.map(w => w.id)))
+    setLastSelectedIndex(null)
+  }
+
+  const handleDeselectAll = () => {
+    setSelectedWordIds(new Set())
+    setLastSelectedIndex(null)
+  }
+
+  const handleBatchGroupChange = (groupId) => {
+    setBatchGroupId(groupId)
+  }
+
+  const handleBatchAssignGroup = async () => {
+    if (selectedWordIds.size === 0) {
+      toast.error('No words selected')
+      return
+    }
+
+    if (!batchGroupId) {
+      toast.error('Please select a group')
+      return
+    }
+
+    try {
+      setBatchAssigning(true)
+      // Use bulk operation to update all selected words in a single request
+      const response = await wordsAPI.bulkOperation({
+        operation: 'update-group',
+        ids: Array.from(selectedWordIds),
+        groupId: batchGroupId
+      })
+
+      toast.success(response.data.message || `${selectedWordIds.size} ${selectedWordIds.size === 1 ? 'word' : 'words'} assigned to group`)
+      setSelectedWordIds(new Set())
+      setBatchGroupId(null)
+      setShowBatchGroupSelector(false)
+      await loadWords() // Reload words to show updated group assignments
+    } catch (error) {
+      toast.error('Failed to assign words to group')
+      console.error('Batch assign error:', error)
+    } finally {
+      setBatchAssigning(false)
+    }
+  }
+
   // Debounced search
   const debouncedSearch = useMemo(
     () => debounce((query) => {
@@ -558,17 +714,45 @@ const Vocabulary = () => {
   )
 
   const filteredWords = useMemo(() => {
-    if (!searchQuery) return words
+    let filtered = words
 
-    const query = searchQuery.toLowerCase()
-    return words.filter(word =>
-      word.word.toLowerCase().includes(query) ||
-      word.definition.toLowerCase().includes(query) ||
-      word.example_sentence?.toLowerCase().includes(query) ||
-      word.vietnamese_translation?.toLowerCase().includes(query) ||
-      word.synonyms?.toLowerCase().includes(query)
-    )
-  }, [words, searchQuery])
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date()
+      const filterDate = new Date()
+
+      switch (dateFilter) {
+        case 'today':
+          filterDate.setHours(0, 0, 0, 0)
+          break
+        case 'week':
+          filterDate.setDate(now.getDate() - 7)
+          break
+        case 'month':
+          filterDate.setMonth(now.getMonth() - 1)
+          break
+        case '3months':
+          filterDate.setMonth(now.getMonth() - 3)
+          break
+      }
+
+      filtered = filtered.filter(word => new Date(word.created_at) >= filterDate)
+    }
+
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(word =>
+        word.word.toLowerCase().includes(query) ||
+        word.definition.toLowerCase().includes(query) ||
+        word.example_sentence?.toLowerCase().includes(query) ||
+        word.vietnamese_translation?.toLowerCase().includes(query) ||
+        word.synonyms?.toLowerCase().includes(query)
+      )
+    }
+
+    return filtered
+  }, [words, searchQuery, dateFilter])
 
   if (loading) {
     return (
@@ -839,6 +1023,15 @@ const Vocabulary = () => {
                     </p>
                   </div>
                 )}
+
+                {/* Group Selection */}
+                {(selectedFile || contentUrl || contentText || analyzingContent) && (
+                  <GroupSelector
+                    value={selectedGroupId}
+                    onChange={setSelectedGroupId}
+                    className="pt-4 border-t border-gray-200 dark:border-gray-700"
+                  />
+                )}
               </div>
 
               {/* Progress Bar */}
@@ -976,6 +1169,7 @@ const Vocabulary = () => {
                       setHasMore(false)
                       setNextOffset(0)
                       setTotalChunks(0)
+                      setSelectedGroupId(null)
                     }}
                     className="text-white hover:text-gray-200 p-2"
                   >
@@ -1256,29 +1450,98 @@ const Vocabulary = () => {
           </div>
         )}
 
-        {/* Search */}
+        {/* Search and Filters */}
         <div className="card">
           <div className="card-body">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Search Input */}
+              <div className="flex-1 relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  className="form-input pl-10"
+                  placeholder="Search words..."
+                  onChange={(e) => debouncedSearch(e.target.value)}
+                />
               </div>
-              <input
-                type="text"
-                className="form-input pl-10"
-                placeholder="Search words..."
-                onChange={(e) => debouncedSearch(e.target.value)}
-              />
+
+              {/* Date Filter */}
+              <div className="flex-shrink-0">
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="form-input"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="week">Last 7 Days</option>
+                  <option value="month">Last Month</option>
+                  <option value="3months">Last 3 Months</option>
+                </select>
+              </div>
+
+              {/* Group Filter */}
+              <div className="flex-shrink-0">
+                <GroupFilter
+                  selectedGroups={selectedGroups}
+                  onGroupsChange={handleGroupsChange}
+                />
+              </div>
             </div>
+
+            {/* Active Filters Pills */}
+            {selectedGroups.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <FilterPills
+                  selectedGroups={selectedGroups}
+                  groups={groups}
+                  onRemoveGroup={handleRemoveGroup}
+                  onClearAll={handleClearAllFilters}
+                />
+              </div>
+            )}
           </div>
         </div>
 
         {/* Words List */}
         <div className="card">
           <div className="card-header">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              Words ({filteredWords.length})
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Words ({filteredWords.length})
+                {selectedWordIds.size > 0 && (
+                  <span className="ml-2 text-sm font-normal text-blue-600 dark:text-blue-400">
+                    ({selectedWordIds.size} selected)
+                  </span>
+                )}
+              </h3>
+              {selectedWordIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDeselectAll}
+                    className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  >
+                    Deselect All
+                  </button>
+                  <button
+                    onClick={() => setShowBatchGroupSelector(true)}
+                    className="btn-primary btn-sm"
+                  >
+                    Assign to Group
+                  </button>
+                </div>
+              )}
+              {selectedWordIds.size === 0 && filteredWords.length > 0 && (
+                <button
+                  onClick={handleSelectAll}
+                  className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Select All
+                </button>
+              )}
+            </div>
           </div>
           <div className="card-body p-0">
             {filteredWords.length === 0 ? (
@@ -1295,6 +1558,14 @@ const Vocabulary = () => {
                 <table className="table">
                   <thead className="table-header">
                     <tr>
+                      <th className="table-header-cell w-12">
+                        <input
+                          type="checkbox"
+                          checked={filteredWords.length > 0 && selectedWordIds.size === filteredWords.length}
+                          onChange={(e) => e.target.checked ? handleSelectAll() : handleDeselectAll()}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </th>
                       <th className="table-header-cell">Word</th>
                       <th className="table-header-cell">Type</th>
                       <th className="table-header-cell">CEFR</th>
@@ -1306,8 +1577,16 @@ const Vocabulary = () => {
                     </tr>
                   </thead>
                   <tbody className="table-body">
-                    {filteredWords.map((word) => (
-                      <tr key={word.id}>
+                    {filteredWords.map((word, index) => (
+                      <tr key={word.id} className={selectedWordIds.has(word.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
+                        <td className="table-cell">
+                          <input
+                            type="checkbox"
+                            checked={selectedWordIds.has(word.id)}
+                            onChange={(e) => handleToggleWord(word.id, index, e)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
                         <td className="table-cell">
                           <div>
                             <div className="font-medium text-gray-900 dark:text-white">
@@ -1372,6 +1651,61 @@ const Vocabulary = () => {
             )}
           </div>
         </div>
+
+        {/* Batch Group Selector Modal */}
+        {showBatchGroupSelector && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Assign {selectedWordIds.size} {selectedWordIds.size === 1 ? 'word' : 'words'} to group
+                </h3>
+                <button
+                  onClick={() => setShowBatchGroupSelector(false)}
+                  disabled={batchAssigning}
+                  className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <GroupSelector
+                  value={batchGroupId}
+                  onChange={handleBatchGroupChange}
+                  className="mb-4"
+                />
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => {
+                      setShowBatchGroupSelector(false)
+                      setBatchGroupId(null)
+                    }}
+                    disabled={batchAssigning}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBatchAssignGroup}
+                    disabled={batchAssigning || !batchGroupId}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px]"
+                  >
+                    {batchAssigning ? (
+                      <span className="flex items-center justify-center">
+                        <LoadingSpinner size="sm" className="mr-2" />
+                        Assigning...
+                      </span>
+                    ) : (
+                      'Assign'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

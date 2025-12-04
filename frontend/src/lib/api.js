@@ -73,6 +73,24 @@ export const wordsAPI = {
   getWords: (params) =>
     api.get('/words', { params }),
 
+  getAll: async ({ search, limit, offset, groups, sortBy, sortOrder, collection } = {}) => {
+    const params = new URLSearchParams()
+    if (search) params.append('q', search)
+    if (limit) params.append('limit', limit)
+    if (offset) params.append('offset', offset)
+    if (sortBy) params.append('sortBy', sortBy)
+    if (sortOrder) params.append('sortOrder', sortOrder)
+    if (collection) params.append('collection', collection)
+
+    // Add groups parameter for filtering
+    if (groups && groups.length > 0) {
+      params.append('groups', groups.join(','))
+    }
+
+    const response = await api.get(`/words?${params.toString()}`)
+    return response.data
+  },
+
   getWord: (id) =>
     api.get(`/words/${id}`),
 
@@ -176,6 +194,33 @@ export const flashcardAPI = {
 
   deleteQuizQuestion: (questionId) =>
     api.delete(`/flashcards/quiz-questions/${questionId}`),
+}
+
+export const groupsAPI = {
+  getAll: async () => {
+    const response = await api.get('/groups')
+    return response.data
+  },
+
+  getById: async (id) => {
+    const response = await api.get(`/groups/${id}`)
+    return response.data
+  },
+
+  create: async (groupData) => {
+    const response = await api.post('/groups', groupData)
+    return response.data
+  },
+
+  update: async (id, groupData) => {
+    const response = await api.put(`/groups/${id}`, groupData)
+    return response.data
+  },
+
+  delete: async (id) => {
+    const response = await api.delete(`/groups/${id}`)
+    return response.data
+  },
 }
 
 export default api

@@ -22,6 +22,7 @@ router.get("/due", async (req, res) => {
       limit = 20,
       includeNew = true,
       includeQuizQuestions = false,
+      groups, // NEW: Group filtering
     } = req.query;
 
     const now = new Date().toISOString();
@@ -38,6 +39,24 @@ router.get("/due", async (req, res) => {
 
     if (!includeNew) {
       query = query.neq("state", "new");
+    }
+
+    // NEW: Filter by groups if provided
+    if (groups) {
+      const groupIds = groups.includes(',')
+        ? groups.split(',').map(id => id.trim())
+        : [groups];
+
+      if (groupIds.includes('ungrouped')) {
+        const otherGroups = groupIds.filter(id => id !== 'ungrouped');
+        if (otherGroups.length > 0) {
+          query = query.or(`words.group_id.in.(${otherGroups.join(',')}),words.group_id.is.null`);
+        } else {
+          query = query.is('words.group_id', null);
+        }
+      } else {
+        query = query.in('words.group_id', groupIds);
+      }
     }
 
     const { data: cards, error } = await query

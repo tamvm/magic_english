@@ -10,6 +10,7 @@ export const useFlashcards = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [includeQuizQuestions, setIncludeQuizQuestions] = useState(false);
+  const [groupsFilter, setGroupsFilter] = useState(null);
 
   // Pre-loading state
   const [nextCard, setNextCard] = useState(null);
@@ -24,7 +25,8 @@ export const useFlashcards = () => {
       const response = await flashcardAPI.getDueCards({
         limit: 10, // Fetch smaller batch for pre-loading
         includeNew: true,
-        includeQuizQuestions: includeQuizQuestions
+        includeQuizQuestions: includeQuizQuestions,
+        groups: groupsFilter
       });
 
       if (response.data.cards.length > 0) {
@@ -42,7 +44,7 @@ export const useFlashcards = () => {
   };
 
   // Fetch cards due for review
-  const fetchDueCards = async (limit = 20, includeQuizQuestionsParam = null) => {
+  const fetchDueCards = async (limit = 20, includeQuizQuestionsParam = null, groupsParam = null) => {
     try {
       setLoading(true);
       setError(null);
@@ -52,6 +54,9 @@ export const useFlashcards = () => {
         ? includeQuizQuestionsParam
         : includeQuizQuestions;
 
+      // Use groups parameter if provided, otherwise use stored state
+      const groupsToUse = groupsParam !== null ? groupsParam : groupsFilter;
+
       // Update the stored state
       if (includeQuizQuestionsParam !== null) {
         setIncludeQuizQuestions(includeQuizQuestionsParam);
@@ -60,7 +65,8 @@ export const useFlashcards = () => {
       const response = await flashcardAPI.getDueCards({
         limit,
         includeNew: true,
-        includeQuizQuestions: shouldIncludeQuiz
+        includeQuizQuestions: shouldIncludeQuiz,
+        groups: groupsToUse
       });
 
       setDueCards(response.data.cards);
@@ -83,15 +89,21 @@ export const useFlashcards = () => {
   };
 
   // Start a new study session
-  const startSession = async () => {
+  const startSession = async (groups = null) => {
     try {
       setError(null);
+
+      // Set groups filter if provided
+      if (groups !== null) {
+        setGroupsFilter(groups);
+      }
 
       const response = await flashcardAPI.startSession();
       setCurrentSession(response.data.session);
 
       // Fetch due cards after starting session with current quiz mode
-      await fetchDueCards();
+      // Pass groups directly to avoid race condition with state update
+      await fetchDueCards(20, null, groups);
 
       return response.data.session;
     } catch (err) {

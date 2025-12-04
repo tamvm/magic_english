@@ -15,6 +15,7 @@ const createWordSchema = Joi.object({
   notes: Joi.string().max(1000).default(''),
   tags: Joi.array().items(Joi.string().max(50)).default([]),
   collectionId: Joi.string().uuid().optional(),
+  groupId: Joi.string().uuid().optional().allow(null), // NEW: Group assignment
   vietnameseTranslation: Joi.string().max(500).default(''),
   synonyms: Joi.string().max(1000).default(''),
 });
@@ -28,6 +29,7 @@ const updateWordSchema = Joi.object({
   exampleSentence: Joi.string().max(500),
   notes: Joi.string().max(1000),
   tags: Joi.array().items(Joi.string().max(50)),
+  groupId: Joi.string().uuid().optional().allow(null), // NEW: Group reassignment
   vietnameseTranslation: Joi.string().max(500),
   synonyms: Joi.string().max(1000),
 });
@@ -37,6 +39,10 @@ const searchSchema = Joi.object({
   limit: Joi.number().integer().min(1).max(1000).default(50),
   offset: Joi.number().integer().min(0).default(0),
   collection: Joi.string().uuid(),
+  groups: Joi.alternatives().try(
+    Joi.string().uuid(), // Single group ID
+    Joi.string().pattern(/^([0-9a-f-]{36}|ungrouped)(,([0-9a-f-]{36}|ungrouped))*$/) // Comma-separated UUIDs or "ungrouped"
+  ).optional(), // NEW: Multi-group filtering
   sortBy: Joi.string().valid('created_at', 'word', 'updated_at').default('created_at'),
   sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
 });
@@ -50,12 +56,13 @@ router.get('/', async (req, res, next) => {
       return next(error);
     }
 
-    const { q, limit, offset, collection, sortBy, sortOrder } = value;
+    const { q, limit, offset, collection, groups, sortBy, sortOrder } = value;
 
     let query = req.supabase
       .from('words')
       .select(`
         *,
+        group:collections!group_id(id, name, color, icon),
         word_collections(
           collection_id,
           collections(name)
@@ -70,8 +77,26 @@ router.get('/', async (req, res, next) => {
       );
     }
 
-    // Add collection filter
-    if (collection) {
+    // NEW: Group filtering (takes precedence over collection filter)
+    if (groups) {
+      const groupIds = groups.includes(',')
+        ? groups.split(',').map(id => id.trim())
+        : [groups];
+
+      // Support "ungrouped" special value
+      if (groupIds.includes('ungrouped')) {
+        const otherGroups = groupIds.filter(id => id !== 'ungrouped');
+        if (otherGroups.length > 0) {
+          query = query.or(`group_id.in.(${otherGroups.join(',')}),group_id.is.null`);
+        } else {
+          query = query.is('group_id', null);
+        }
+      } else {
+        query = query.in('group_id', groupIds);
+      }
+    }
+    // Fallback to existing collection filter
+    else if (collection) {
       const { data: wordsInCollection } = await req.supabase
         .from('word_collections')
         .select('word_id')
@@ -105,7 +130,24 @@ router.get('/', async (req, res, next) => {
       );
     }
 
-    if (collection) {
+    // NEW: Apply group filter to count query
+    if (groups) {
+      const groupIds = groups.includes(',')
+        ? groups.split(',').map(id => id.trim())
+        : [groups];
+
+      if (groupIds.includes('ungrouped')) {
+        const otherGroups = groupIds.filter(id => id !== 'ungrouped');
+        if (otherGroups.length > 0) {
+          countQuery = countQuery.or(`group_id.in.(${otherGroups.join(',')}),group_id.is.null`);
+        } else {
+          countQuery = countQuery.is('group_id', null);
+        }
+      } else {
+        countQuery = countQuery.in('group_id', groupIds);
+      }
+    }
+    else if (collection) {
       // For collection filtering in count query, we need to use a subquery
       const { data: wordsInCollection } = await req.supabase
         .from('word_collections')
@@ -174,14 +216,29 @@ router.post('/', async (req, res, next) => {
       return next(error);
     }
 
-    const { collectionId, ...wordData } = value;
+    const { collectionId, groupId, ...wordData } = value;
 
-    // Insert word
-    const { data: word, error: insertError } = await req.supabase
+    // NEW: Validate groupId if provided
+    if (groupId) {
+      const { data: groupExists } = await req.supabase
+        .from('collections')
+        .select('id')
+        .eq('id', groupId)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      if (!groupExists) {
+        return res.status(400).json({ error: 'Invalid group ID' });
+      }
+    }
+
+    // Insert word with group_id
+    const { data: word, error: insertError} = await req.supabase
       .from('words')
       .insert({
         ...wordData,
         user_id: req.user.id,
+        group_id: groupId || null, // NEW: Set group assignment
         cefr_level: wordData.cefrLevel,
         word_type: wordData.wordType,
         ipa_pronunciation: wordData.ipaPronunciation,
@@ -189,7 +246,10 @@ router.post('/', async (req, res, next) => {
         vietnamese_translation: wordData.vietnameseTranslation,
         synonyms: wordData.synonyms,
       })
-      .select()
+      .select(`
+        *,
+        group:collections!group_id(id, name, color, icon)
+      `)
       .single();
 
     if (insertError) {
@@ -273,21 +333,53 @@ router.put('/:id', async (req, res, next) => {
       return next(error);
     }
 
+    const { groupId, ...otherFields } = value;
+
+    // NEW: Validate groupId if provided (and not null)
+    if (groupId !== undefined && groupId !== null) {
+      const { data: groupExists } = await req.supabase
+        .from('collections')
+        .select('id')
+        .eq('id', groupId)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      if (!groupExists) {
+        return res.status(400).json({ error: 'Invalid group ID' });
+      }
+    }
+
+    // Build update object - only include fields that were provided
+    const updateData = {
+      updated_at: new Date().toISOString(),
+    };
+
+    // Map camelCase to snake_case for provided fields only
+    if (otherFields.word !== undefined) updateData.word = otherFields.word;
+    if (otherFields.definition !== undefined) updateData.definition = otherFields.definition;
+    if (otherFields.cefrLevel !== undefined) updateData.cefr_level = otherFields.cefrLevel;
+    if (otherFields.wordType !== undefined) updateData.word_type = otherFields.wordType;
+    if (otherFields.ipaPronunciation !== undefined) updateData.ipa_pronunciation = otherFields.ipaPronunciation;
+    if (otherFields.exampleSentence !== undefined) updateData.example_sentence = otherFields.exampleSentence;
+    if (otherFields.notes !== undefined) updateData.notes = otherFields.notes;
+    if (otherFields.tags !== undefined) updateData.tags = otherFields.tags;
+    if (otherFields.vietnameseTranslation !== undefined) updateData.vietnamese_translation = otherFields.vietnameseTranslation;
+    if (otherFields.synonyms !== undefined) updateData.synonyms = otherFields.synonyms;
+
+    // NEW: Add group_id to update if provided (allow null to unassign)
+    if (groupId !== undefined) {
+      updateData.group_id = groupId;
+    }
+
     const { data: word, error: updateError } = await req.supabase
       .from('words')
-      .update({
-        ...value,
-        cefr_level: value.cefrLevel,
-        word_type: value.wordType,
-        ipa_pronunciation: value.ipaPronunciation,
-        example_sentence: value.exampleSentence,
-        vietnamese_translation: value.vietnameseTranslation,
-        synonyms: value.synonyms,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
-      .select()
+      .select(`
+        *,
+        group:collections!group_id(id, name, color, icon)
+      `)
       .single();
 
     if (updateError) {
@@ -337,13 +429,17 @@ router.delete('/:id', async (req, res, next) => {
 router.post('/bulk', async (req, res, next) => {
   try {
     const bulkSchema = Joi.object({
-      operation: Joi.string().valid('import', 'export', 'delete').required(),
+      operation: Joi.string().valid('import', 'export', 'delete', 'update-group').required(),
       words: Joi.array().items(createWordSchema).when('operation', {
         is: 'import',
         then: Joi.required(),
       }),
       ids: Joi.array().items(Joi.string().uuid()).when('operation', {
-        is: 'delete',
+        is: Joi.valid('delete', 'update-group'),
+        then: Joi.required(),
+      }),
+      groupId: Joi.string().uuid().allow(null).when('operation', {
+        is: 'update-group',
         then: Joi.required(),
       }),
       collectionId: Joi.string().uuid(),
@@ -355,7 +451,7 @@ router.post('/bulk', async (req, res, next) => {
       return next(error);
     }
 
-    const { operation, words, ids, collectionId } = value;
+    const { operation, words, ids, groupId, collectionId } = value;
 
     switch (operation) {
       case 'import':
@@ -431,6 +527,45 @@ router.post('/bulk', async (req, res, next) => {
         res.json({
           message: `${deletedWords.length} words deleted successfully`,
           deletedWords,
+        });
+        break;
+
+      case 'update-group':
+        // Validate groupId if provided (and not null)
+        if (groupId !== null) {
+          const { data: groupExists } = await req.supabase
+            .from('collections')
+            .select('id')
+            .eq('id', groupId)
+            .eq('user_id', req.user.id)
+            .maybeSingle();
+
+          if (!groupExists) {
+            return res.status(400).json({ error: 'Invalid group ID' });
+          }
+        }
+
+        // Update all words with the new group_id
+        const { data: updatedWords, error: updateError } = await req.supabase
+          .from('words')
+          .update({
+            group_id: groupId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', req.user.id)
+          .in('id', ids)
+          .select(`
+            *,
+            group:collections!group_id(id, name, color, icon)
+          `);
+
+        if (updateError) {
+          return next(updateError);
+        }
+
+        res.json({
+          message: `${updatedWords.length} ${updatedWords.length === 1 ? 'word' : 'words'} assigned to group successfully`,
+          words: updatedWords,
         });
         break;
 

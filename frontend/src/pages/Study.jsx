@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   Clock,
@@ -22,6 +22,9 @@ import QuizQuestion from '../components/Flashcards/QuizQuestion';
 
 const Study = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const groupsParam = searchParams.get('groups');
+
   const {
     dueCards,
     currentCard,
@@ -79,10 +82,10 @@ const Study = () => {
       totalAnswers: 0,
     });
 
-    startSession();
+    startSession(groupsParam);
     setSessionStartTime(Date.now());
     // Remove cleanup - let user explicitly end session
-  }, []);
+  }, [groupsParam]);
 
   // Set card start time when new card appears or question changes
   useEffect(() => {

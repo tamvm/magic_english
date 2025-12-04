@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
-import { Menu, Search, Bell, Sun, Moon, Monitor, LogOut } from 'lucide-react'
+import { Menu, Bell, Sun, Moon, Monitor, LogOut } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { cn } from '@/lib/utils'
 
-const Header = () => {
+const Header = ({ showMobileSidebar, setShowMobileSidebar }) => {
   const { user, signOut } = useAuth()
   const { theme, setTheme, toggleTheme } = useTheme()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
@@ -27,24 +27,15 @@ const Header = () => {
         <div className="flex justify-between items-center h-16">
           {/* Mobile menu button */}
           <div className="md:hidden">
-            <button className="p-2 rounded-md text-gray-500 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500">
+            <button
+              onClick={() => setShowMobileSidebar(!showMobileSidebar)}
+              className="p-2 rounded-md text-gray-500 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
               <Menu className="h-6 w-6" />
             </button>
           </div>
 
-          {/* Search bar */}
-          <div className="flex-1 max-w-lg mx-4">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white dark:bg-gray-700 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Search words..."
-              />
-            </div>
-          </div>
+          <div className="flex-1"></div>
 
           {/* Right section */}
           <div className="flex items-center space-x-4">

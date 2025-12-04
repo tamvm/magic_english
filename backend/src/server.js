@@ -9,6 +9,7 @@ import userRoutes from './routes/users.js';
 import aiRoutes from './routes/ai.js';
 import profileRoutes from './routes/profile.js';
 import flashcardRoutes from './routes/flashcards.js';
+import groupsRoutes from './routes/groups.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authMiddleware } from './middleware/auth.js';
 
@@ -75,6 +76,7 @@ app.use('/api/words', authMiddleware, wordsRoutes);
 app.use('/api/ai', authMiddleware, aiRoutes);
 app.use('/api/profile', authMiddleware, profileRoutes);
 app.use('/api/flashcards', authMiddleware, flashcardRoutes);
+app.use('/api/groups', authMiddleware, groupsRoutes);
 
 // Error handling middleware
 app.use(errorHandler);
