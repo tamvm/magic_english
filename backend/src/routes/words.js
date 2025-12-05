@@ -457,11 +457,12 @@ router.post('/bulk', async (req, res, next) => {
       case 'import':
         const wordsToInsert = words.map(word => {
           // Destructure to exclude camelCase fields that need to be converted to snake_case
-          const { cefrLevel, wordType, ipaPronunciation, exampleSentence, vietnameseTranslation, ...restWord } = word;
+          const { cefrLevel, wordType, ipaPronunciation, exampleSentence, vietnameseTranslation, groupId, ...restWord } = word;
 
           return {
             ...restWord,
             user_id: req.user.id,
+            group_id: groupId || null, // Handle group assignment during import
             cefr_level: cefrLevel,
             word_type: wordType,
             ipa_pronunciation: ipaPronunciation,
