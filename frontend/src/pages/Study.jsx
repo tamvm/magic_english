@@ -113,7 +113,14 @@ const Study = () => {
     try {
       setPreloadingNextBatch(true);
       console.log('Preloading next batch of quiz questions...');
-      const response = await flashcardAPI.getAllQuizQuestions({ limit: 50, includeNew: true });
+
+      // Include groups filter if present
+      const params = { limit: 50, includeNew: true };
+      if (groupsParam) {
+        params.groups = groupsParam;
+      }
+
+      const response = await flashcardAPI.getAllQuizQuestions(params);
 
       if (response.data.questions && response.data.questions.length > 0) {
         // Append new questions to existing ones (avoiding duplicates)
@@ -136,8 +143,15 @@ const Study = () => {
   const fetchAllQuizQuestions = async () => {
     try {
       setLoadingQuizQuestions(true);
-      console.log('Fetching quiz questions...');
-      const response = await flashcardAPI.getAllQuizQuestions({ limit: 100, includeNew: true });
+      console.log('Fetching quiz questions...', groupsParam ? `for groups: ${groupsParam}` : 'all groups');
+
+      // Include groups filter if present
+      const params = { limit: 100, includeNew: true };
+      if (groupsParam) {
+        params.groups = groupsParam;
+      }
+
+      const response = await flashcardAPI.getAllQuizQuestions(params);
       console.log('Quiz questions response:', response.data);
 
       if (response.data.questions && response.data.questions.length > 0) {
@@ -546,17 +560,17 @@ const Study = () => {
                             </div>
                           </td>
                           <td className="table-cell max-w-xs">
-                            <p className="text-gray-700 dark:text-gray-300 text-sm truncate">
+                            <p className="text-gray-700 dark:text-gray-300 text-sm break-words whitespace-pre-wrap">
                               {card.words.definition}
                             </p>
                           </td>
                           <td className="table-cell max-w-xs">
-                            <p className="text-gray-600 dark:text-gray-400 text-sm truncate">
+                            <p className="text-gray-600 dark:text-gray-400 text-sm break-words whitespace-pre-wrap">
                               "{card.words.example_sentence}"
                             </p>
                           </td>
                           <td className="table-cell max-w-xs">
-                            <p className="text-gray-600 dark:text-gray-400 text-sm truncate">
+                            <p className="text-gray-600 dark:text-gray-400 text-sm break-words whitespace-pre-wrap">
                               {card.words.vietnamese_translation}
                             </p>
                           </td>

@@ -50,6 +50,9 @@ const Vocabulary = () => {
   const [loadingMore, setLoadingMore] = useState(false)
   const [selectedGroupId, setSelectedGroupId] = useState(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [editingWordId, setEditingWordId] = useState(null)
+  const [editFormData, setEditFormData] = useState({})
+  const [savingEdit, setSavingEdit] = useState(false)
 
   // Initialize selectedGroups from URL on mount
   useEffect(() => {
@@ -586,6 +589,68 @@ const Vocabulary = () => {
     } catch (error) {
       toast.error('Failed to delete word')
       console.error('Delete word error:', error)
+    }
+  }
+
+  const startEditWord = (word) => {
+    setEditingWordId(word.id)
+    setEditFormData({
+      word: word.word,
+      definition: word.definition,
+      word_type: word.word_type || '',
+      cefr_level: word.cefr_level || '',
+      ipa_pronunciation: word.ipa_pronunciation || '',
+      vietnamese_translation: word.vietnamese_translation || '',
+      synonyms: word.synonyms || '',
+      example_sentence: word.example_sentence || ''
+    })
+  }
+
+  const cancelEditWord = () => {
+    setEditingWordId(null)
+    setEditFormData({})
+  }
+
+  // Handle Escape key to cancel edit
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && editingWordId !== null) {
+        cancelEditWord()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [editingWordId])
+
+  const saveEditWord = async () => {
+    if (!editFormData.word?.trim() || !editFormData.definition?.trim()) {
+      toast.error('Word and definition are required')
+      return
+    }
+
+    try {
+      setSavingEdit(true)
+      const response = await wordsAPI.updateWord(editingWordId, {
+        word: editFormData.word.trim(),
+        definition: editFormData.definition.trim(),
+        wordType: editFormData.word_type || null,
+        cefrLevel: editFormData.cefr_level || null,
+        ipaPronunciation: editFormData.ipa_pronunciation || null,
+        vietnameseTranslation: editFormData.vietnamese_translation || null,
+        synonyms: editFormData.synonyms || null,
+        exampleSentence: editFormData.example_sentence || null
+      })
+
+      setWords(prev => prev.map(w => w.id === editingWordId ? response.data.word : w))
+      setEditingWordId(null)
+      setEditFormData({})
+      toast.success('Word updated successfully')
+    } catch (error) {
+      toast.error('Failed to update word')
+      console.error('Update word error:', error)
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -1577,74 +1642,240 @@ const Vocabulary = () => {
                     </tr>
                   </thead>
                   <tbody className="table-body">
-                    {filteredWords.map((word, index) => (
-                      <tr key={word.id} className={selectedWordIds.has(word.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
-                        <td className="table-cell">
-                          <input
-                            type="checkbox"
-                            checked={selectedWordIds.has(word.id)}
-                            onChange={(e) => handleToggleWord(word.id, index, e)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="table-cell">
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">
-                              {word.word}
-                            </div>
-                            {word.ipa_pronunciation && (
-                              <div className="text-sm text-gray-500 dark:text-gray-400 font-mono">
-                                /{word.ipa_pronunciation}/
+                    {filteredWords.map((word, index) => {
+                      const isEditing = editingWordId === word.id
+
+                      if (isEditing) {
+                        return (
+                          <tr key={word.id} className="bg-yellow-50 dark:bg-yellow-900/20">
+                            <td className="table-cell" colSpan="9">
+                              <div className="space-y-4 p-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                      Word *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editFormData.word}
+                                      onChange={(e) => setEditFormData(prev => ({ ...prev, word: e.target.value }))}
+                                      className="form-input w-full"
+                                      placeholder="Enter word"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                      IPA Pronunciation
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editFormData.ipa_pronunciation}
+                                      onChange={(e) => setEditFormData(prev => ({ ...prev, ipa_pronunciation: e.target.value }))}
+                                      className="form-input w-full font-mono"
+                                      placeholder="e.g., ˈhɛloʊ"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                      Word Type
+                                    </label>
+                                    <select
+                                      value={editFormData.word_type}
+                                      onChange={(e) => setEditFormData(prev => ({ ...prev, word_type: e.target.value }))}
+                                      className="form-input w-full"
+                                    >
+                                      <option value="">Select type</option>
+                                      <option value="noun">Noun</option>
+                                      <option value="verb">Verb</option>
+                                      <option value="adjective">Adjective</option>
+                                      <option value="adverb">Adverb</option>
+                                      <option value="pronoun">Pronoun</option>
+                                      <option value="preposition">Preposition</option>
+                                      <option value="conjunction">Conjunction</option>
+                                      <option value="interjection">Interjection</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                      CEFR Level
+                                    </label>
+                                    <select
+                                      value={editFormData.cefr_level}
+                                      onChange={(e) => setEditFormData(prev => ({ ...prev, cefr_level: e.target.value }))}
+                                      className="form-input w-full"
+                                    >
+                                      <option value="">Select level</option>
+                                      <option value="A1">A1</option>
+                                      <option value="A2">A2</option>
+                                      <option value="B1">B1</option>
+                                      <option value="B2">B2</option>
+                                      <option value="C1">C1</option>
+                                      <option value="C2">C2</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Definition *
+                                  </label>
+                                  <textarea
+                                    value={editFormData.definition}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, definition: e.target.value }))}
+                                    className="form-input w-full"
+                                    rows="2"
+                                    placeholder="Enter definition"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Vietnamese Translation
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editFormData.vietnamese_translation}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, vietnamese_translation: e.target.value }))}
+                                    className="form-input w-full"
+                                    placeholder="Vietnamese meaning"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Synonyms
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editFormData.synonyms}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, synonyms: e.target.value }))}
+                                    className="form-input w-full"
+                                    placeholder="Similar words"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Example Sentence
+                                  </label>
+                                  <textarea
+                                    value={editFormData.example_sentence}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, example_sentence: e.target.value }))}
+                                    className="form-input w-full"
+                                    rows="2"
+                                    placeholder="Example usage"
+                                  />
+                                </div>
+
+                                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                  <button
+                                    onClick={cancelEditWord}
+                                    disabled={savingEdit}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={saveEditWord}
+                                    disabled={savingEdit || !editFormData.word?.trim() || !editFormData.definition?.trim()}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px]"
+                                  >
+                                    {savingEdit ? (
+                                      <span className="flex items-center justify-center">
+                                        <LoadingSpinner size="sm" className="mr-2" />
+                                        Saving...
+                                      </span>
+                                    ) : (
+                                      'Save Changes'
+                                    )}
+                                  </button>
+                                </div>
                               </div>
+                            </td>
+                          </tr>
+                        )
+                      }
+
+                      return (
+                        <tr key={word.id} className={selectedWordIds.has(word.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
+                          <td className="table-cell">
+                            <input
+                              type="checkbox"
+                              checked={selectedWordIds.has(word.id)}
+                              onChange={(e) => handleToggleWord(word.id, index, e)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="table-cell">
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">
+                                {word.word}
+                              </div>
+                              {word.ipa_pronunciation && (
+                                <div className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                                  /{word.ipa_pronunciation}/
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="table-cell">
+                            {word.word_type && (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getWordTypeColor(word.word_type)}`}>
+                                {word.word_type}
+                              </span>
                             )}
-                          </div>
-                        </td>
-                        <td className="table-cell">
-                          {word.word_type && (
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getWordTypeColor(word.word_type)}`}>
-                              {word.word_type}
-                            </span>
-                          )}
-                        </td>
-                        <td className="table-cell">
-                          {word.cefr_level && (
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCefrColor(word.cefr_level)}`}>
-                              {word.cefr_level}
-                            </span>
-                          )}
-                        </td>
-                        <td className="table-cell max-w-xs">
-                          <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap break-words">
-                            {word.definition}
-                          </p>
-                        </td>
-                        <td className="table-cell max-w-xs">
-                          <p className="text-sm text-gray-900 dark:text-white truncate">
-                            {word.vietnamese_translation || '-'}
-                          </p>
-                        </td>
-                        <td className="table-cell max-w-xs">
-                          <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                            {word.synonyms || '-'}
-                          </p>
-                        </td>
-                        <td className="table-cell max-w-xs">
-                          <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap break-words">
-                            {word.example_sentence}
-                          </p>
-                        </td>
-                        <td className="table-cell">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => deleteWord(word.id)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="table-cell">
+                            {word.cefr_level && (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCefrColor(word.cefr_level)}`}>
+                                {word.cefr_level}
+                              </span>
+                            )}
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap break-words">
+                              {word.definition}
+                            </p>
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-sm text-gray-900 dark:text-white truncate">
+                              {word.vietnamese_translation || '-'}
+                            </p>
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                              {word.synonyms || '-'}
+                            </p>
+                          </td>
+                          <td className="table-cell max-w-xs">
+                            <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap break-words">
+                              {word.example_sentence}
+                            </p>
+                          </td>
+                          <td className="table-cell">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => startEditWord(word)}
+                                className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                                title="Edit word"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteWord(word.id)}
+                                className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                                title="Delete word"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -878,10 +878,10 @@ router.delete("/quiz-questions/:questionId", async (req, res) => {
 router.get("/quiz-questions", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { limit = 100, includeNew = true } = req.query;
+    const { limit = 100, includeNew = true, groups } = req.query;
 
     console.log(
-      `Fetching quiz questions for user ${userId}, limit: ${limit}, includeNew: ${includeNew}`
+      `Fetching quiz questions for user ${userId}, limit: ${limit}, includeNew: ${includeNew}, groups: ${groups}`
     );
 
     const now = new Date();
@@ -901,11 +901,31 @@ router.get("/quiz-questions", async (req, res) => {
           cefr_level,
           example_sentence,
           vietnamese_translation,
-          synonyms
+          synonyms,
+          group_id
         )
       `
       )
       .eq("words.user_id", userId);
+
+    // Filter by groups if specified
+    if (groups) {
+      const groupIds = groups.includes(',')
+        ? groups.split(',').map(id => id.trim())
+        : [groups];
+
+      // Support "ungrouped" special value
+      if (groupIds.includes('ungrouped')) {
+        const otherGroups = groupIds.filter(id => id !== 'ungrouped');
+        if (otherGroups.length > 0) {
+          query = query.or(`words.group_id.in.(${otherGroups.join(',')}),words.group_id.is.null`);
+        } else {
+          query = query.is('words.group_id', null);
+        }
+      } else {
+        query = query.in('words.group_id', groupIds);
+      }
+    }
 
     // Filter by due date for questions that have been reviewed before
     // Include questions that are due now OR new questions (no due_date set)

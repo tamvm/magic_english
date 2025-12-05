@@ -4,9 +4,14 @@ import { Search, BookOpen, Edit2, Trash2, Plus, Filter, Eye } from 'lucide-react
 import { flashcardAPI, wordsAPI } from '@/lib/api';
 import { getCefrColor, getWordTypeColor, formatDate } from '@/lib/utils';
 import LoadingSpinner from '@/components/UI/LoadingSpinner';
+import GroupFilter from '@/components/GroupFilter';
+import FilterPills from '@/components/FilterPills';
+import { useGroups } from '@/hooks/useGroups';
 import toast from 'react-hot-toast';
 
 const QuizQuestions = () => {
+  const { groups } = useGroups();
+
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [words, setWords] = useState({});
   const [loading, setLoading] = useState(true);
@@ -14,16 +19,29 @@ const QuizQuestions = () => {
   const [filterType, setFilterType] = useState('all');
   const [generating, setGenerating] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
+  const [selectedGroups, setSelectedGroups] = useState([]);
 
   useEffect(() => {
     loadQuizQuestions();
     loadWords();
   }, []);
 
+  // Reload when groups filter changes
+  useEffect(() => {
+    loadQuizQuestions();
+  }, [selectedGroups]);
+
   const loadQuizQuestions = async () => {
     try {
       setLoading(true);
-      const response = await flashcardAPI.getAllQuizQuestions();
+
+      // Include groups filter if present
+      const params = {};
+      if (selectedGroups.length > 0) {
+        params.groups = selectedGroups.join(',');
+      }
+
+      const response = await flashcardAPI.getAllQuizQuestions(params);
 
       // Transform the response to match component expectations
       const questions = (response.data.questions || []).map(question => ({
@@ -51,6 +69,20 @@ const QuizQuestions = () => {
     } catch (error) {
       console.error('Failed to load words:', error);
     }
+  };
+
+  // Group filter handlers
+  const handleGroupsChange = (newGroups) => {
+    setSelectedGroups(newGroups);
+  };
+
+  const handleRemoveGroup = (groupId) => {
+    setSelectedGroups(selectedGroups.filter(id => id !== groupId));
+  };
+
+  const handleClearAllFilters = () => {
+    setSelectedGroups([]);
+    setFilterType('all');
   };
 
   const generateQuizQuestions = async () => {
@@ -196,7 +228,7 @@ const QuizQuestions = () => {
                 />
               </div>
 
-              {/* Filter */}
+              {/* Question Type Filter */}
               <div className="relative">
                 <select
                   value={filterType}
@@ -213,7 +245,27 @@ const QuizQuestions = () => {
                   <Filter className="h-5 w-5 text-gray-400" />
                 </div>
               </div>
+
+              {/* Group Filter */}
+              <div className="flex-shrink-0">
+                <GroupFilter
+                  selectedGroups={selectedGroups}
+                  onGroupsChange={handleGroupsChange}
+                />
+              </div>
             </div>
+
+            {/* Active Filters Pills */}
+            {selectedGroups.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <FilterPills
+                  selectedGroups={selectedGroups}
+                  groups={groups}
+                  onRemoveGroup={handleRemoveGroup}
+                  onClearAll={handleClearAllFilters}
+                />
+              </div>
+            )}
           </div>
         </div>
 
